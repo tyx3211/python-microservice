@@ -1,5 +1,5 @@
 from sanic import Sanic
-from websockets import WebSocketClientProtocol
+from websockets.legacy.client import WebSocketClientProtocol
 import asyncio
 import time
 
