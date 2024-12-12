@@ -1,3 +1,5 @@
 sanic
 requests
 pymysql
+websockets
+aiomysql
