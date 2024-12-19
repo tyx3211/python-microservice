@@ -3,3 +3,5 @@ requests
 pymysql
 websockets
 aiomysql
+snowflake-id
+bcrypt

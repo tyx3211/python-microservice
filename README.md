@@ -4,7 +4,7 @@
 
 ### 提交**文件**
 
-Codeup 支持两种方式进行代码提交：网页端提交，以及本地 Git 客户端提交。hhh!
+Codeup 支持两种方式进行代码提交：网页端提交，以及本地 Git 客户端提交。
 
 * 如需体验本地命令行操作，请先安装 Git 工具，安装方法参见[安装Git](https://help.aliyun.com/document_detail/153800.html)。
 
