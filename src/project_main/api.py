@@ -81,16 +81,30 @@ def isAllNone(checkTuple:tuple)->bool:
             return False
     return True
 
+
+    # 封装将输入的json展平的函数
+def flatten_json(nested_json, parent_key='', sep='_'):
+    items = []
+    for k, v in nested_json.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_json(v, new_key, sep=sep).items())
+        elif isinstance(v, list):
+            for i, item in enumerate(v):
+                items.extend(flatten_json(item, f"{new_key}{i+1}", sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
     # 封装通用前置入参检查,result是传出参数
 def checkJsonParams(request:Request,required_fields:list,result:dict):
     if request.headers.get('Content-Type') != 'application/json':
         result["result"] = response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
         return False
-    dic = request.json
-    if dic is None:
+    if request.json is None:
         result["result"] = response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "please provide legal json!"}, status=400)
         return False
-    if check_Required_params(dic,required_fields) is False:
+    if check_Required_params(flatten_json(request.json),required_fields) is False:
         result["result"] = response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Missing required parameters!"}, status=400)
         return False
     ###
@@ -156,7 +170,7 @@ async def device_add(request:Request):
     if checkJsonParams(request,device_required_fields,result) is False: # 检查出错误
         return result["result"]
     # 额外参数类型检验，这里检验password
-    dic=request.json
+    dic = flatten_json(request.json)
     if type(dic["password"]) is not str:
         return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "password shoule be string!"}, status=400)
     
@@ -183,7 +197,7 @@ async def device_basic_modify(request:Request):
 
     #正式处理部分
     try:
-        dic = request.json
+        dic = flatten_json(request.json)
         # 查询是否要修改密码
         if "password" in dic:
             hashed_password = bcrypt.hashpw(dic["password"].encode('utf-8'),bcrypt.gensalt()) #将用户密码加盐哈希
@@ -235,7 +249,7 @@ async def device_delete(request):
     
     # 正式处理部分
     try:
-        dic = request.json 
+        dic = flatten_json(request.json)
         await deviceOP.delete(dic["device_id"])
         return response.json({"status":"success","data":{}},status=200)
     except Exception as e:
@@ -253,7 +267,7 @@ async def group_add(request):
     
     #正式处理部分
     try:
-        dic = request.json
+        dic = flatten_json(request.json)
         requestTuple = normalize_dict_to_tuple(dic,groupFields) # 规范化为元组
         group_id = await groupOP.create(requestTuple)
         return response.json({"status":"success","data":{"group_id":group_id}},status=200)
@@ -270,7 +284,7 @@ async def group_modify(request):
 
     #正式处理部分
     try:
-        dic = request.json
+        dic = flatten_json(request.json)
         update_info = normalize_dict_to_tuple(dic,group_updated_fields)
         if isAllNone(update_info):
             return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Missing required parameters!"}, status=400)
@@ -319,7 +333,7 @@ async def group_delete(request):
     
     # 正式处理部分
     try:
-        dic = request.json 
+        dic = flatten_json(request.json)
         await groupOP.delete(dic["group_id"])
         return response.json({"status":"success","data":{}},status=200)
     except Exception as e:
@@ -337,7 +351,7 @@ async def relation_add(request):
     
     #正式处理部分
     try:
-        dic = request.json 
+        dic = flatten_json(request.json)
         await relationOP.create(dic["device_id"],dic["group_id"])
         return response.json({"status":"success","data":{}},status=200)
     except Exception as e:
@@ -352,7 +366,7 @@ async def relation_del(request):
     
     # 正式处理部分
     try:
-        dic = request.json 
+        dic = flatten_json(request.json) 
         await relationOP.deleteRelation(dic["device_id"],dic["group_id"])
         return response.json({"status":"success","data":{}},status=200)
     except Exception as e:
@@ -369,7 +383,7 @@ async def relation_group_modify(request):
 
     #正式处理部分
     try:
-        dic = request.json
+        dic = flatten_json(request.json)
         device_id = dic["device_id"]
         group_id = dic["group_id"]
         new_group_id = dic["new_group_id"]
@@ -388,7 +402,7 @@ async def relation_device_modify(request):
 
     #正式处理部分
     try:
-        dic = request.json
+        dic = flatten_json(request.json)
         device_id = dic["device_id"]
         group_id = dic["group_id"]
         new_device_id = dic["new_device_id"]
@@ -410,7 +424,7 @@ async def group_all_devices_modify(request):
 
     #正式处理部分
     try:
-        dic = request.json
+        dic = flatten_json(request.json)
         # 查询是否要修改密码
         if "password" in dic:
             hashed_password = bcrypt.hashpw(dic["password"].encode('utf-8'),bcrypt.gensalt()) #将用户密码加盐哈希
@@ -461,7 +475,7 @@ async def delete_device_all_relation(request):
     
     # 正式处理部分
     try:
-        dic = request.json 
+        dic = flatten_json(request.json) 
         await relationOP.deleteAllRelationByDevice(dic["device_id"])
         return response.json({"status":"success","data":{}},status=200)
     except Exception as e:
@@ -476,7 +490,7 @@ async def delete_group_all_relation(request):
     
     # 正式处理部分
     try:
-        dic = request.json 
+        dic = flatten_json(request.json) 
         await relationOP.deleteAllRelationByGroup(dic["group_id"])
         return response.json({"status":"success","data":{}},status=200)
     except Exception as e:
@@ -491,7 +505,7 @@ async def delete_group_all_relation(request):
     
 #     # 正式处理部分
 #     try:
-#         dic = request.json 
+#         dic = flatten(request.json)
 #         await relationOP.deleteAllRelatedDeviceByGroup(dic["group_id"])
 #         return response.json({"status":"success","data":{}},status=200)
 #     except Exception as e:
