@@ -70,6 +70,41 @@ def addTimestamp(info,isCreated=False):
         result = info + (timestamp,)
     return result
 
+def WrapperToJson(OriginDict:dict,isDevice=False,isGroup=False,isRelation=False)->dict:
+    if isDevice:
+        result = {}
+        result["device_id"] = OriginDict["device_id"]
+        result["device_name"] = OriginDict["device_name"]
+        result["device_type"] = OriginDict["device_type"]
+        result["hardware"] = {}
+        result["hardware"]["sn"] = OriginDict["hardware_sn"]
+        result["hardware"]["model"] = OriginDict["hardware_model"]
+        result["software"] = {}
+        result["software"]["version"] = OriginDict["software_version"]
+        result["software"]["last_update"] = OriginDict["software_last_update"].strftime("%Y-%m-%d") # 额外转化Date对象
+        result["nic"] = [{},{}]
+        result["nic"][0]["type"] = OriginDict["nic1_type"]
+        result["nic"][0]["mac"] = OriginDict["nic1_mac"]
+        result["nic"][0]["ipv4"] = OriginDict["nic1_ipv4"]
+        result["nic"][1]["type"] = OriginDict["nic2_type"]
+        result["nic"][1]["mac"] = OriginDict["nic2_mac"]
+        result["nic"][1]["ipv4"] = OriginDict["nic2_ipv4"]
+        result["dev_description"] = OriginDict["dev_description"]
+        result["dev_state"] = OriginDict["dev_state"]
+        result["created_time"] = OriginDict["created_time"]
+        result["updated_time"] = OriginDict["updated_time"]
+    elif isGroup:
+        result = {}
+        result["group_id"] = OriginDict["group_id"]
+        result["group_name"] = OriginDict["group_name"]
+        result["group_description"] = OriginDict["group_description"]
+        result["created_time"] = OriginDict["created_time"]
+        result["updated_time"] = OriginDict["updated_time"]
+    else:
+        result = None
+    return result
+
+
 # 封装update_sql生成函数
 def getUpdateSQL(sqlPartBefore:str,update_info,referece_list:list,sqlPartAfter:str)->str:
     Part_str=""
@@ -77,9 +112,17 @@ def getUpdateSQL(sqlPartBefore:str,update_info,referece_list:list,sqlPartAfter:s
     for item in update_info:
         if item is not None:
             Part_str+=referece_list[index]+"=%s,"
-            index+=1
-    result_str = sqlPartBefore + Part_str[:-1] + sqlPartAfter
+        index+=1
+    Part_str+="updated_time=%s "
+    result_str = sqlPartBefore + Part_str + sqlPartAfter
     return result_str
+
+def clearInfoNoneColumn(info:tuple)->tuple:
+    result = []
+    for item in info:
+        if item is not None:
+            result.append(item)
+    return tuple(result)
 
 # 再封装一些常用子操作(多为查询)
 async def isDeviceExist(cursor,device_id=None,SN_Model=None): # SN_Model是(hardware_sn,hardware_model)元组
@@ -92,7 +135,24 @@ async def isDeviceExist(cursor,device_id=None,SN_Model=None): # SN_Model是(hard
     else:
         raise DeviceOPError("Missing required parameters!",400)
     result = await cursor.fetchall()
-    # print(result)
+    return None if len(result)==0 else result
+
+async def isGroupExist(cursor,group_id=None,group_name=None):
+    if group_id is not None:
+        sql1="""SELECT group_id FROM groups WHERE group_id=%s;"""
+        await cursor.execute(sql1,(group_id,))
+    elif group_name is not None:
+        sql2="""SELECT group_id FROM groups WHERE group_name=%s;"""
+        await cursor.execute(sql2,(group_name,))
+    else:
+        raise GroupOPError("Missing required parameters!",400)
+    result = await cursor.fetchall()
+    return None if len(result)==0 else result
+
+async def isRelationExist(cursor,device_id,group_id):
+    sql="""SELECT device_id FROM relations WHERE (device_id=%s AND group_id=%s);"""
+    await cursor.execute(sql,(device_id,group_id))
+    result = await cursor.fetchall()
     return None if len(result)==0 else result
 
 # 设备相关操作
@@ -131,12 +191,13 @@ class DeviceOP:
                     if (await isDeviceExist(cursor,device_id) is None):
                         raise DeviceOPError("Device NOT FOUND.",404) # Conflict错误码，资源已存在
                     # 再生成update_sql
-                    sql = getUpdateSQL("UPDATE devices SET ",update_info,device_updated_fields,"WHERE device_id = %s")
+                    sql = getUpdateSQL("UPDATE devices SET ",update_info,device_updated_fields,"WHERE device_id = %s;")
+                    update_info = clearInfoNoneColumn(update_info)
+                    update_info = addTimestamp(update_info)
                     await cursor.execute(sql,update_info + (device_id,))
                     await conn.commit()
         except Exception as e:
             await conn.rollback()
-            # print(e)
             if isOPError(e):
                 raise
             else:
@@ -145,11 +206,51 @@ class DeviceOP:
     
     # 查询设备信息
     async def query(self,device_id=None,SN_Model=None):
-        pass
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    if device_id is not None:
+                        sql1="""SELECT device_id,device_name,device_type,hardware_sn,hardware_model,software_version,software_last_update,nic1_type,nic1_mac,nic1_ipv4,nic2_type,nic2_mac,nic2_ipv4,dev_description,dev_state,password,created_time,updated_time FROM devices WHERE device_id=%s;"""
+                        await cursor.execute(sql1,(device_id,))
+                    elif SN_Model is not None:
+                        sql2="""SELECT device_id,device_name,device_type,hardware_sn,hardware_model,software_version,software_last_update,nic1_type,nic1_mac,nic1_ipv4,nic2_type,nic2_mac,nic2_ipv4,dev_description,dev_state,password,created_time,updated_time FROM devices WHERE (hardware_sn=%s AND hardware_model=%s);"""
+                        await cursor.execute(sql2,SN_Model)
+                    result = await cursor.fetchone()
+                    await conn.commit()
+                    if result is None:
+                        raise DeviceOPError("Device NOT FOUND.",404)
+                    else:
+                        result = WrapperToJson(result,isDevice=True)
+                        return result
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
-    #删除设备（设备分组关系表也要一起删）
-    async def delete(self,device_info):
-        pass
+    #删除设备（设备分组关系也要一起删）
+    async def delete(self,device_id):
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询是否有该设备
+                    if (await isDeviceExist(cursor,device_id=device_id) is None):
+                        raise DeviceOPError("Device NOT FOUND",404)
+                    # 再正式删除设备
+                        # 先删除-设备分组关系
+                    sql1 = """DELETE FROM relations WHERE device_id=%s"""
+                    await cursor.execute(sql1,(device_id,))
+                        # 再删除设备
+                    sql2 = """DELETE FROM devices WHERE device_id=%s"""
+                    await cursor.execute(sql2,(device_id,))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
 #分组相关操作
 class GroupOP:
@@ -159,19 +260,98 @@ class GroupOP:
 
     # 创建分组
     async def create(self,group_info):
-        pass
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询分组是否存在
+                    group_name=group_info[0]
+                    if (await isGroupExist(cursor,group_name=group_name) is not None):
+                        raise GroupOPError("Group already exists.",409) # Conflict错误码，资源已存在
+                    # 再正式注册分组
+                    sql = """INSERT INTO groups(group_id,group_name,group_description,created_time,updated_time) VALUES(DEFAULT,%s,%s,%s,%s);"""
+                    group_info = addTimestamp(group_info,isCreated=True) # 包装created_time和updated_time
+                    await cursor.execute(sql,group_info)
+                    # 查看分组ID
+                    sql2 = """SELECT group_id from groups WHERE group_name=%s"""
+                    await cursor.execute(sql2,(group_name,))
+                    result = await cursor.fetchone()
+                    await conn.commit()
+                    return result[0]
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
     # 修改分组信息
-    async def update(self,group_id,group_info):
-        pass
+    async def update(self,group_id,update_info):
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询分组是否已经存在
+                    if (await isGroupExist(cursor,group_id) is None):
+                        raise GroupOPError("Group NOT FOUND.",404)
+                    # 再生成update_sql
+                    sql = getUpdateSQL("UPDATE groups SET ",update_info,group_updated_fields,"WHERE group_id = %s;")
+                    update_info = clearInfoNoneColumn(update_info)
+                    update_info = addTimestamp(update_info)
+                    await cursor.execute(sql,update_info + (group_id,))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
     # 查询分组信息
-    async def query(self,group_id:None,group_Name:None):
-        pass
+    async def query(self,group_id=None,group_name=None):
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    if group_id is not None:
+                        sql1="""SELECT group_id,group_name,group_description,created_time,updated_time FROM groups WHERE group_id=%s;"""
+                        await cursor.execute(sql1,(group_id,))
+                    elif group_name is not None:
+                        sql2="""SELECT group_id,group_name,group_description,created_time,updated_time FROM groups WHERE group_name=%s;"""
+                        await cursor.execute(sql2,(group_name,))
+                    result = await cursor.fetchone()
+                    await conn.commit()
+                    if result is None:
+                        raise GroupOPError("Group NOT FOUND.",404)
+                    else:
+                        result = WrapperToJson(result,isGroup=True)
+                        return result
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
     #删除分组（设备分组关系表也要一起删）
-    async def delete(self,group_id):
-        pass
+    async def delete(self,group_id=None,group_name=None):
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询是否有该分组
+                    if (await isGroupExist(cursor,group_id=group_id) is None):
+                        raise GroupOPError("Group NOT FOUND",404)
+                    # 再正式删除分组
+                        # 先删除-设备分组关系
+                    sql1 = """DELETE FROM relations WHERE group_id=%s"""
+                    await cursor.execute(sql1,(group_id,))
+                        # 再删除分组
+                    sql2 = """DELETE FROM groups WHERE group_id=%s"""
+                    await cursor.execute(sql2,(group_id,))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
 
 # 设备-分组关系相关操作
 class RelationOP:
@@ -181,46 +361,208 @@ class RelationOP:
 
     # 新建设备-分组关系
     async def create(self,device_id,group_id):
-        pass
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 查询创建设备-分组关系操作是否合法
+                    if (await isDeviceExist(cursor,device_id) is None):
+                        raise DeviceOPError("Device NOT FOUND.",404)
+                    if (await isGroupExist(cursor,group_id) is None):
+                        raise GroupOPError("Group NOT FOUND.",404)
+                    if (await isRelationExist(cursor,device_id,group_id) is not None):
+                        raise RelationOPError("Relation already exists",409)
+                    # 再正式注册分组
+                    sql = """INSERT INTO relations(relation_id,device_id,group_id) VALUES(DEFAULT,%s,%s);"""
+                    await cursor.execute(sql,(device_id,group_id))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
-    # 修改设备-分组关系，或利用关系修改涉笔
-        # 修改某设备-分组关系中设备
-    async def updateDeviceInRelation(self,device_id,origin_group_id,new_group_id):
-        pass
+    # 修改设备-分组关系，或利用关系修改设备
         # 修改某设备-分组关系中分组
-    async def updateGroupInRelation(self,device_id,origin_group_id,new_group_id):
-        pass
+    async def updateGroupInRelation(self,device_id,group_id,new_group_id):
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询设备-分组关系是否已经存在
+                    if (await isRelationExist(cursor,device_id,group_id) is None):
+                        raise RelationOPError("Relation NOT FOUND.",404)
+                    sql="""UPDATE relations SET group_id=%s WHERE (device_id=%s AND group_id=%s)"""
+                    await cursor.execute(sql,(new_group_id,device_id,group_id))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
+
+        # 修改某设备-分组关系中设备
+    async def updateDeviceInRelation(self,device_id,group_id,new_device_id):
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询设备-分组关系是否已经存在
+                    if (await isRelationExist(cursor,device_id,group_id) is None):
+                        raise RelationOPError("Relation NOT FOUND.",404)
+                    sql="""UPDATE relations SET device_id=%s WHERE (device_id=%s AND group_id=%s)"""
+                    await cursor.execute(sql,(new_device_id,device_id,group_id))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
         # 修改分组下所有设备信息
-    async def updateAllDevice(self,group_id,devices_info):
-        pass
+    async def updateAllDevice(self,group_id,devices_update_info):
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询分组是否已经存在
+                    if (await isGroupExist(cursor,group_id) is None):
+                        raise GroupOPError("Group NOT FOUND.",404)
+                    # 再查询分组下是否有设备
+                    sqlTest = """SELECT device_id FROM relations WHERE group_id=%s LIMIT 1;"""
+                    await cursor.execute(sqlTest,(group_id,))
+                    TestResult = await cursor.fetchone()
+                    if TestResult is None:
+                        raise RelationOPError("No Devices in this Group.",404)
+                    # 使用子查询
+                    sql = getUpdateSQL("UPDATE devices SET ",devices_update_info,device_updated_fields,"WHERE device_id IN (SELECT device_id FROM relations WHERE group_id=%s);")
+                    devices_update_info = clearInfoNoneColumn(devices_update_info)
+                    devices_update_info = addTimestamp(devices_update_info)
+                    await cursor.execute(sql,devices_update_info + (group_id,))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
     # 查询设备-分组关系
         # 根据设备id查询所有所属分组信息
     async def queryAllGroupByDevice(self,device_id):
-        pass
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    if (await isDeviceExist(cursor,device_id=device_id) is None):
+                        raise DeviceOPError("Device NOT FOUND",404)
+                    sql="""SELECT group_id,group_name,group_description,created_time,updated_time FROM groups WHERE group_id IN (SELECT group_id FROM relations WHERE device_id=%s);"""
+                    await cursor.execute(sql,(device_id,))
+                    result = await cursor.fetchall()
+                    await conn.commit()
+                    if len(result)==0:
+                        raise RelationOPError("Devices not in any Group.",404)
+                    else:
+                        return result
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
         # 根据分组id查询所有下属设备信息
     async def queryAllDeviceByGroup(self,group_id):
-        pass
-    
-        # 根据设备id查询设备信息和所有分组信息
-    async def queryAllInfoByDevice(self,device_id):
-        pass
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    if (await isGroupExist(cursor,group_id=group_id) is None):
+                        raise GroupOPError("Group NOT FOUND",404)
+                    sql="""SELECT device_id,device_name,device_type,hardware_sn,hardware_model,software_version,software_last_update,nic1_type,nic1_mac,nic1_ipv4,nic2_type,nic2_mac,nic2_ipv4,dev_description,dev_state,password,created_time,updated_time FROM devices WHERE device_id IN (SELECT device_id FROM relations WHERE group_id=%s);"""
+                    await cursor.execute(sql,(group_id,))
+                    result = await cursor.fetchall()
+                    await conn.commit()
+                    if len(result)==0:
+                        raise RelationOPError("No Devices in this Group.",404)
+                    else:
+                        for i in range(len(result)):
+                            result[i] = WrapperToJson(result[i],isDevice=True)
+                        return result
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
     # 删除设备-分组关系，或根据关系删除相应设备或分组
         # 删除设备-分组关系
     async def deleteRelation(self,device_id,group_id):
-        pass
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询是否有该设备-分组关系
+                    if (await isRelationExist(cursor,device_id,group_id) is None):
+                        raise RelationOPError("Relation NOT FOUND",404)
+                    # 再正式删除设备-分组关系
+                    sql = """DELETE FROM relations WHERE device_id=%s AND group_id=%s"""
+                    await cursor.execute(sql,(device_id,group_id))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
         # 删除某个设备的所有设备-分组关系
     async def deleteAllRelationByDevice(self,device_id):
-        pass
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询是否有该设备
+                    if (await isDeviceExist(cursor,device_id=device_id) is None):
+                        raise DeviceOPError("Device NOT FOUND",404)
+                    # 再查询设备是否在分组下
+                    sqlTest = """SELECT group_id FROM relations WHERE device_id=%s LIMIT 1;"""
+                    await cursor.execute(sqlTest,(device_id,))
+                    TestResult = await cursor.fetchone()
+                    if TestResult is None:
+                        raise RelationOPError("Devices not in any Group.",404)
+                    # 再正式删除设备-分组关系
+                    sql = """DELETE FROM relations WHERE device_id=%s;"""
+                    await cursor.execute(sql,(device_id,))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
         # 删除某个分组下所有的设备-分组关系
     async def deleteAllRelationByGroup(self,group_id):
-        pass
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询是否有该分组
+                    if (await isGroupExist(cursor,group_id=group_id) is None):
+                        raise GroupOPError("Group NOT FOUND",404)
+                    # 再查询分组下是否有设备
+                    sqlTest = """SELECT device_id FROM relations WHERE group_id=%s LIMIT 1;"""
+                    await cursor.execute(sqlTest,(group_id,))
+                    TestResult = await cursor.fetchone()
+                    if TestResult is None:
+                        raise RelationOPError("No Devices in this Group.",404)
+                    # 再正式删除设备-分组关系
+                    sql = """DELETE FROM relations WHERE group_id=%s;"""
+                    await cursor.execute(sql,(group_id,))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
         # 删除某个分组下所属的所有设备
-    async def deleteAllrelatedDeviceByGroup(self,group_id):
+    async def deleteAllRelatedDeviceByGroup(self,group_id):
         pass

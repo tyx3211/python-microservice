@@ -9,6 +9,7 @@ import aiomysql
 from sanic.log import logger,error_logger
 from snowflake import SnowflakeGenerator
 import bcrypt
+from urllib.parse import unquote
 
 from Database_OP import DeviceOP,GroupOP,RelationOP
 from Database_OP import DeviceOPError,GroupOPError,RelationOPError,DataBaseError
@@ -74,6 +75,12 @@ def normalize_dict_to_tuple(request_dict:dict,reference_list:list)->tuple:
     result_tuple = tuple(result_list)
     return result_tuple
 
+def isAllNone(checkTuple:tuple)->bool:
+    for item in checkTuple:
+        if item is not None:
+            return False
+    return True
+
     # 封装通用前置入参检查,result是传出参数
 def checkJsonParams(request:Request,required_fields:list,result:dict):
     if request.headers.get('Content-Type') != 'application/json':
@@ -133,8 +140,14 @@ async def setup_db(app,loop):
     # 服务正式启动前先连接数据库
     pool.close()
     await pool.wait_closed()
+
+#############################################################
     
 # 北向接口
+
+# 设备基础信息CRUD
+
+##############################################################
     #设备注册
 @app.post('/service/devices_manage/device_add')
 async def device_add(request:Request):
@@ -163,7 +176,7 @@ async def device_add(request:Request):
     # 修改设备基础信息
 @app.put('/service/devices_manage/device_basic_modify')
 async def device_basic_modify(request:Request):
-    # 参数检验部分，至少要有device_id
+    # 参数检验部分，至少要有device_id和其余一项修改的
     result={} # 传出参数
     if checkJsonParams(request,["device_id"],result) is False: # 检查出错误
         return result["result"]
@@ -176,11 +189,313 @@ async def device_basic_modify(request:Request):
             hashed_password = bcrypt.hashpw(dic["password"].encode('utf-8'),bcrypt.gensalt()) #将用户密码加盐哈希
             dic["password"] = hashed_password.decode("utf-8")
         update_info = normalize_dict_to_tuple(dic,device_updated_fields)
+        if isAllNone(update_info):
+            return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Missing required parameters!"}, status=400)
         device_id = dic["device_id"]
         await deviceOP.update(device_id,update_info)
         return response.json({"status":"success","data":{}},status=200)
     except Exception as e:
         return dealException(e)
+    
+    # 查询设备基础信息
+        # 根据设备id查询
+@app.get('/service/devices_manage/device_basic_id_query/<device_id>')
+async def device_id_query(request:Request,device_id):  
+    if request.headers.get('Content-Type') != 'application/json':
+        return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
+    #正式处理部分
+    try:
+        device_id = unquote(device_id) # 去除URL转义
+        result = await deviceOP.query(device_id=device_id)
+        return response.json({"status":"success","data":result},status=200)
+    except Exception as e:
+        return dealException(e)
+        
+        # 根据设备Sn_Model对查询
+@app.get('/service/devices_manage/device_basic_SnModel_query/<device_sn>/<device_model>')
+async def device_SnModel_query(request:Request,device_sn,device_model):  
+    if request.headers.get('Content-Type') != 'application/json':
+        return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
+    #正式处理部分
+    try:
+        device_sn = unquote(device_sn) # 去除URL转义
+        device_model = unquote(device_model) # 去除URL转义
+        result = await deviceOP.query(SN_Model=(device_sn,device_model))
+        return response.json({"status":"success","data":result},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+    # 删除设备(连带删除设备关联的所有设备分组关系)
+@app.delete('/service/devices_manage/device_delete',ignore_body=False)
+async def device_delete(request):
+    # 需要提供device_id
+    result={}
+    if checkJsonParams(request,["device_id"],result) is False: # 检查出错误
+        return result["result"]
+    
+    # 正式处理部分
+    try:
+        dic = request.json 
+        await deviceOP.delete(dic["device_id"])
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+
+################################################################
+    
+# 分组基础信息CRUD
+    # 创建分组
+@app.post('/service/devices_manage/group_add')
+async def group_add(request):
+    result={} # 传出参数
+    if checkJsonParams(request,group_required_fields,result) is False: # 检查出错误
+        return result["result"]
+    
+    #正式处理部分
+    try:
+        dic = request.json
+        requestTuple = normalize_dict_to_tuple(dic,groupFields) # 规范化为元组
+        group_id = await groupOP.create(requestTuple)
+        return response.json({"status":"success","data":{"group_id":group_id}},status=200)
+    except Exception as e:
+        return dealException(e)
+
+    # 修改分组信息
+@app.put('/service/devices_manage/group_modify')
+async def group_modify(request):
+    # 参数检验部分，至少要有group_id
+    result={} # 传出参数
+    if checkJsonParams(request,["group_id"],result) is False: # 检查出错误
+        return result["result"]
+
+    #正式处理部分
+    try:
+        dic = request.json
+        update_info = normalize_dict_to_tuple(dic,group_updated_fields)
+        if isAllNone(update_info):
+            return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Missing required parameters!"}, status=400)
+        group_id = dic["group_id"]
+        await groupOP.update(group_id,update_info)
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+
+    # 查询分组信息
+        # 根据分组ID查询
+@app.get('/service/devices_manage/group_id_query/<group_id>')
+async def group_id_query(request,group_id):
+    if request.headers.get('Content-Type') != 'application/json':
+        return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
+    #正式处理部分
+    try:
+        group_id = unquote(group_id) # 去除URL转义
+        group_id = int(group_id)
+        result = await groupOP.query(group_id=group_id)
+        return response.json({"status":"success","data":result},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+        # 根据分组name查询
+@app.get('/service/devices_manage/group_name_query/<group_name>')
+async def group_name_query(request,group_name):
+    if request.headers.get('Content-Type') != 'application/json':
+        return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
+    #正式处理部分
+    try:
+        group_name = unquote(group_name) # 去除URL转义
+        result = await groupOP.query(group_name=group_name)
+        return response.json({"status":"success","data":result},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+
+    # 删除分组(也要删除分组关联的设备-分组关系)
+@app.delete('/service/devices_manage/group_delete',ignore_body=False)
+async def group_delete(request):
+    # 需要提供group_id
+    result={}
+    if checkJsonParams(request,["group_id"],result) is False: # 检查出错误
+        return result["result"]
+    
+    # 正式处理部分
+    try:
+        dic = request.json 
+        await groupOP.delete(dic["group_id"])
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+
+###############################################################
+
+# 设备-分组关系基础信息CRUD
+    # 新建设备-分组关系
+@app.post('/service/devices_manage/relation_add')
+async def relation_add(request):
+    result={} # 传出参数
+    if checkJsonParams(request,relation_required_fields,result) is False: # 检查出错误
+        return result["result"]
+    
+    #正式处理部分
+    try:
+        dic = request.json 
+        await relationOP.create(dic["device_id"],dic["group_id"])
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+    # 删除设备-分组关系
+@app.delete('/service/devices_manage/relation_del',ignore_body=False)
+async def relation_del(request):
+    result={}
+    if checkJsonParams(request,["device_id","group_id"],result) is False: # 检查出错误
+        return result["result"]
+    
+    # 正式处理部分
+    try:
+        dic = request.json 
+        await relationOP.deleteRelation(dic["device_id"],dic["group_id"])
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+    # 修改设备-分组关系
+        # 修改某个设备-分组关系中的分组
+@app.put('/service/devices_manage/relation_group_modify')
+async def relation_group_modify(request):
+    # 参数检验部分，至少要有device_id,group_id,new_group_id
+    result={} # 传出参数
+    if checkJsonParams(request,["device_id","group_id","new_group_id"],result) is False: # 检查出错误
+        return result["result"]
+
+    #正式处理部分
+    try:
+        dic = request.json
+        device_id = dic["device_id"]
+        group_id = dic["group_id"]
+        new_group_id = dic["new_group_id"]
+        await relationOP.updateGroupInRelation(device_id,group_id,new_group_id)
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+        # 修改某个设备-分组关系中的设备
+@app.put('/service/devices_manage/relation_device_modify')
+async def relation_device_modify(request):
+    # 参数检验部分，至少要有device_id,group_id,new_device_id
+    result={} # 传出参数
+    if checkJsonParams(request,["device_id","group_id","new_device_id"],result) is False: # 检查出错误
+        return result["result"]
+
+    #正式处理部分
+    try:
+        dic = request.json
+        device_id = dic["device_id"]
+        group_id = dic["group_id"]
+        new_device_id = dic["new_device_id"]
+        await relationOP.updateDeviceInRelation(device_id,group_id,new_device_id)
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+
+###########################################################
+
+# 基于设备-分组关系的二层增删改查
+    # 修改分组下所有设备信息
+@app.put('/service/devices_manage/group_all_devices_modify')
+async def group_all_devices_modify(request):
+    # 参数检验部分，至少要有group_id和其余一项修改的
+    result={} # 传出参数
+    if checkJsonParams(request,["group_id"],result) is False: # 检查出错误
+        return result["result"]
+
+    #正式处理部分
+    try:
+        dic = request.json
+        # 查询是否要修改密码
+        if "password" in dic:
+            hashed_password = bcrypt.hashpw(dic["password"].encode('utf-8'),bcrypt.gensalt()) #将用户密码加盐哈希
+            dic["password"] = hashed_password.decode("utf-8")
+        update_info = normalize_dict_to_tuple(dic,device_updated_fields)
+        if isAllNone(update_info):
+            return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Missing required parameters!"}, status=400)
+        group_id = dic["group_id"]
+        await relationOP.updateAllDevice(group_id,update_info)
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+
+    # 根据设备id查询其所有所属分组信息
+@app.get('/service/devices_manage/device_query_all_group/<device_id>')
+async def device_query_all_group(request,device_id):
+    if request.headers.get('Content-Type') != 'application/json':
+        return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
+    #正式处理部分
+    try:
+        device_id = unquote(device_id) # 去除URL转义
+        result = await relationOP.queryAllGroupByDevice(device_id)
+        return response.json({"status":"success","data":result},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+    # 根据分组id查询其所有设备信息
+@app.get('/service/devices_manage/group_query_all_device/<group_id>')
+async def group_query_all_device(request,group_id):
+    if request.headers.get('Content-Type') != 'application/json':
+        return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
+    #正式处理部分
+    try:
+        group_id = unquote(group_id) # 去除URL转义
+        group_id = int(group_id)
+        result = await relationOP.queryAllDeviceByGroup(group_id)
+        return response.json({"status":"success","data":result},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+    # 根据设备id删除某个设备的所有设备-分组关系
+@app.delete('/service/devices_manage/delete_device_all_relation',ignore_body=False)
+async def delete_device_all_relation(request):
+    result={}
+    if checkJsonParams(request,["device_id"],result) is False: # 至少需要提供device_id
+        return result["result"]
+    
+    # 正式处理部分
+    try:
+        dic = request.json 
+        await relationOP.deleteAllRelationByDevice(dic["device_id"])
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+    # 根据分组id删除某个分组的所有设备-分组关系
+@app.delete('/service/devices_manage/delete_group_all_relation',ignore_body=False)
+async def delete_group_all_relation(request):
+    result={}
+    if checkJsonParams(request,["group_id"],result) is False: # 至少需要提供group_id
+        return result["result"]
+    
+    # 正式处理部分
+    try:
+        dic = request.json 
+        await relationOP.deleteAllRelationByGroup(dic["group_id"])
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+#     # 根据分组id删除某个分组下的所有设备
+# @app.delete('/service/devices_manage/delete_group_all_devices',ignore_body=False)
+# async def delete_group_all_relation(request):
+#     result={}
+#     if checkJsonParams(request,["group_id"],result) is False: # 至少需要提供group_id
+#         return result["result"]
+    
+#     # 正式处理部分
+#     try:
+#         dic = request.json 
+#         await relationOP.deleteAllRelatedDeviceByGroup(dic["group_id"])
+#         return response.json({"status":"success","data":{}},status=200)
+#     except Exception as e:
+#         return dealException(e)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0",port=9090)

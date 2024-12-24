@@ -83,6 +83,7 @@ async def ping_pong(ws:WebSocketClientProtocol,event): # 使用type-hint
 
 # 模拟sender业务逻辑函数，用它来替代一次心跳
 async def business_main(ws:WebSocketClientProtocol,event):
+    global failureCount
     while True:
         try:
             await asyncio.sleep(3) # 每隔3s 发送业务请求

@@ -47,18 +47,7 @@ def test_valid_request(device_id):
     payload = {
         "device_id": device_id,
         "device_name": "Device A",
-        "device_type": "Smartphone",
-        "hardware_sn": "SN12345",
-        "hardware_model": "ModelX",
-        "software_version": "1.0.0",
-        "software_last_update": "2024-12-01",
-        "nic1_type": "Ethernet",
-        "nic1_mac": "00:1A:2B:3C:4D:5E",
-        "nic1_ipv4": "192.168.1.1",
-        "nic2_type": "WiFi",
-        "nic2_mac": "00:1A:2B:3C:4D:5F",
-        "nic2_ipv4": "192.168.1.2",
-        "dev_description": "A sample device for testing.",
+        "dev_description": "A sample device updated.",
         "password": "newpassword123"
     }
     
@@ -188,7 +177,8 @@ def test_password_change(device_id):
 # 执行所有测试用例
 def run_tests():
     # 先添加设备
-    device_id = add_device()
+    device_id = "7275938644072861696"
+    # device_id = add_device()
     if device_id:
         # 设备添加成功，执行修改设备的相关测试
         test_valid_request(device_id)

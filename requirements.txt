@@ -5,3 +5,5 @@ websockets
 aiomysql
 snowflake-id
 bcrypt
+pytest
+httpx
