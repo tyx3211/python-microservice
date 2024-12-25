@@ -11,8 +11,8 @@ import json # 用于获取json反序列化内容得到字典
 # delay和timestamp都是秒级别的
 def wait_time_from(timestamp:float,delay:float)->int:
     consumedTime = time.time() - timestamp
-    return (delay - consumedTime)
-
+    return 0 if (delay - consumedTime) < 0 else (delay - consumedTime)
+ 
 
 SERVER_URI = "ws://localhost:8000/ws"  # 服务端 WebSocket 地址
 MAX_PONGNUMS = 3 # 最大pong帧容忍数
@@ -59,6 +59,7 @@ async def ping_pong(ws:WebSocketClientProtocol,event): # 使用type-hint
             # 使用 await asyncio.wait_for 设置超时，如果 10 秒内没有收到 pong，就会超时
             await asyncio.wait_for(event["recv"].wait(), timeout=TIMEOUT)
             event["recv"].clear()
+            failureCount = 0
             pong = event["data"]
             
             print(f"receive {pong} at {time.time()}") # 日志消息
@@ -92,6 +93,7 @@ async def business_main(ws:WebSocketClientProtocol,event):
             # 使用 await asyncio.wait_for 设置超时，如果 10 秒内没有收到 response，就会超时
             await asyncio.wait_for(event["recv"].wait(), timeout=TIMEOUT)
             event["recv"].clear()
+            failureCount = 0
             response = event["data"]
             
             print(f"receive {response} at {time.time()}") #日志消息

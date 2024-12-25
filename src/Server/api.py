@@ -11,13 +11,12 @@ from snowflake import SnowflakeGenerator
 import bcrypt
 from urllib.parse import unquote
 
+from Database_OP import connect_to_database,close_database
 from Database_OP import DeviceOP,GroupOP,RelationOP
 from Database_OP import DeviceOPError,GroupOPError,RelationOPError,DataBaseError
+from south_api_core import Ws_Serve_Core,queryDeviceStatusInfo
 
 gen = SnowflakeGenerator(1) # 雪花ID生成器
-
-# 全局连接池
-pool:aiomysql.Pool = None
 
 # 数据库操作对象
 deviceOP = None
@@ -30,13 +29,6 @@ app = Sanic("webSocketServer")
 # 将异常反馈以json形式输出
 app.config.FALLBACK_ERROR_FORMAT = "json"
 
-# 配置Host，Port，数据库User和Password
-
-Host="127.0.0.1"
-Port=3306
-User="root"
-Password="root"
-
 # 设置预设列表
     # 各表创建时需要的字段(一些创建时不需要指定的如group_id,relation_id不需要记录)
 deviceFields = ["device_id","device_name","device_type","hardware_sn","hardware_model","software_version","software_last_update","nic1_type","nic1_mac","nic1_ipv4","nic2_type","nic2_mac","nic2_ipv4","dev_description","dev_state","password"]
@@ -47,7 +39,7 @@ device_required_fields = ["device_name","device_type","hardware_sn","hardware_mo
 group_required_fields = ["group_name"]
 relation_required_fields = ["device_id","group_id"]
     # 用户update时最多能够指定更新的字段
-device_updated_fields = ["device_name","device_type","software_version","software_last_update","nic1_type","nic1_mac","nic1_ipv4","nic2_type","nic2_mac","nic2_ipv4","dev_description","password"]
+device_updated_fields = ["device_name","device_type","software_version","software_last_update","nic1_type","nic1_mac","nic1_ipv4","nic2_type","nic2_mac","nic2_ipv4","dev_description","dev_state","password"]
 group_updated_fields = ["group_description"]
         # 若更新某个关系下分组
 relation_updated_group = ["group_id"]
@@ -124,36 +116,21 @@ def dealException(e:Exception):
         return response.json({"status": "fail", "type":"DATABASE_ERROR" , "message": "Maybe JSON parameter type incorrect(please check) or DataBase Inner Error"}, status=500)
     else:
         return response.json({"status": "fail", "type":"INNER_ERROR" , "message": "Server Inner Error"}, status=500)
-
-async def connect_to_database():
-    global pool,deviceOP,groupOP,relationOP
-    # 初始化连接池
-    pool = await aiomysql.create_pool(
-        host=Host,
-        port=Port,
-        user=User,
-        password=Password,
-        db="device_management",
-        minsize=15, # 最小(基础)连接数
-        maxsize=100,  # 可以设置最大连接数
-    )
-    
-    # 为数据库基本操作配置上连接池
-    deviceOP = DeviceOP(pool)
-    groupOP = GroupOP(pool)
-    relationOP = RelationOP(pool)
     
     
 @app.listener("before_server_start")
 async def setup_db(app,loop):
     # 服务正式启动前先连接数据库
+    global deviceOP,groupOP,relationOP
     await connect_to_database()
+    deviceOP = DeviceOP()
+    groupOP = GroupOP()
+    relationOP = RelationOP()
     
 @app.listener("after_server_stop")
-async def setup_db(app,loop):
+async def close_db(app,loop):
     # 服务正式启动前先连接数据库
-    pool.close()
-    await pool.wait_closed()
+    await close_database()
 
 #############################################################
     
@@ -510,6 +487,26 @@ async def delete_group_all_relation(request):
 #         return response.json({"status":"success","data":{}},status=200)
 #     except Exception as e:
 #         return dealException(e)
+
+
+
+###################################################################################
+
+# 和南向接口配合的北向接口
+@app.get("/service/device_statusInfo_query/<device_id>")
+async def device_statusInfo_query(request,device_id):
+    result = queryDeviceStatusInfo(device_id)
+    if result is None:
+        return response.json({"status":"fail","message":"wrong device_id OR offline device."})
+    else:
+        print(result)
+        return response.json({"status":"success","data":result})
+
+# 南向接口
+@app.websocket("/ws")
+async def Ws_Serve(request,ws:WebSocketClientProtocol):
+    print("hhh")
+    await Ws_Serve_Core(ws)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0",port=9090)

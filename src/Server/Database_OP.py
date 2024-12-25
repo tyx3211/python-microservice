@@ -14,6 +14,33 @@ import math
 # gen = SnowflakeGenerator(1) # 雪花ID生成器
 
 
+# 配置Host，Port，数据库User和Password
+
+Host="127.0.0.1"
+Port=3306
+User="root"
+Password="root"
+
+pool:aiomysql.Pool = None
+
+async def connect_to_database():
+    global pool,deviceOP,groupOP,relationOP
+    # 初始化连接池
+    pool = await aiomysql.create_pool(
+        host=Host,
+        port=Port,
+        user=User,
+        password=Password,
+        db="device_management",
+        minsize=15, # 最小(基础)连接数
+        maxsize=100,  # 可以设置最大连接数
+    )
+
+async def close_database():
+    pool.close()
+    await pool.wait_closed()
+
+
 # 设置预设列表
     # 各表创建时需要的字段(一些创建时不需要指定的如group_id,relation_id不需要记录)
 deviceFields = ["device_id","device_name","device_type","hardware_sn","hardware_model","software_version","software_last_update","nic1_type","nic1_mac","nic1_ipv4","nic2_type","nic2_mac","nic2_ipv4","dev_description","dev_state","password"]
@@ -24,7 +51,7 @@ device_required_fields = ["device_name","device_type","hardware_sn","hardware_mo
 group_required_fields = ["group_name"]
 relation_required_fields = ["device_id","group_id"]
     # 用户update时最多能够指定更新的字段
-device_updated_fields = ["device_name","device_type","software_version","software_last_update","nic1_type","nic1_mac","nic1_ipv4","nic2_type","nic2_mac","nic2_ipv4","dev_description","password"]
+device_updated_fields = ["device_name","device_type","software_version","software_last_update","nic1_type","nic1_mac","nic1_ipv4","nic2_type","nic2_mac","nic2_ipv4","dev_description","dev_state","password"]
 group_updated_fields = ["group_description"]
         # 若更新某个关系下分组
 relation_updated_group = ["group_id"]
@@ -91,6 +118,7 @@ def WrapperToJson(OriginDict:dict,isDevice=False,isGroup=False,isRelation=False)
         result["nic"][1]["ipv4"] = OriginDict["nic2_ipv4"]
         result["dev_description"] = OriginDict["dev_description"]
         result["dev_state"] = OriginDict["dev_state"]
+        result["password"] = OriginDict["password"]
         result["created_time"] = OriginDict["created_time"]
         result["updated_time"] = OriginDict["updated_time"]
     elif isGroup:
@@ -157,14 +185,10 @@ async def isRelationExist(cursor,device_id,group_id):
 
 # 设备相关操作
 class DeviceOP:
-    # 构造函数，用于使用连接池
-    def __init__(self,Pool:aiomysql.Pool):
-        self.pool:aiomysql.Pool = Pool
-    
     # 设备注册(创建设备)
     async def create(self,device_info:tuple):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询设备是否已经存在,且假定上层已经处理好了device_info(即已经处理好了雪花ID生成，和密码创建)
                     sn_model = (device_info[3],device_info[4])
@@ -185,7 +209,7 @@ class DeviceOP:
     # 修改设备信息
     async def update(self,device_id,update_info):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询设备是否已经存在
                     if (await isDeviceExist(cursor,device_id) is None):
@@ -207,7 +231,7 @@ class DeviceOP:
     # 查询设备信息
     async def query(self,device_id=None,SN_Model=None):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     if device_id is not None:
                         sql1="""SELECT device_id,device_name,device_type,hardware_sn,hardware_model,software_version,software_last_update,nic1_type,nic1_mac,nic1_ipv4,nic2_type,nic2_mac,nic2_ipv4,dev_description,dev_state,password,created_time,updated_time FROM devices WHERE device_id=%s;"""
@@ -232,7 +256,7 @@ class DeviceOP:
     #删除设备（设备分组关系也要一起删）
     async def delete(self,device_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询是否有该设备
                     if (await isDeviceExist(cursor,device_id=device_id) is None):
@@ -254,14 +278,10 @@ class DeviceOP:
     
 #分组相关操作
 class GroupOP:
-    # 构造函数，用于使用连接池
-    def __init__(self,Pool:aiomysql.Pool):
-        self.pool:aiomysql.Pool = Pool
-
     # 创建分组
     async def create(self,group_info):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询分组是否存在
                     group_name=group_info[0]
@@ -287,7 +307,7 @@ class GroupOP:
     # 修改分组信息
     async def update(self,group_id,update_info):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询分组是否已经存在
                     if (await isGroupExist(cursor,group_id) is None):
@@ -308,7 +328,7 @@ class GroupOP:
     # 查询分组信息
     async def query(self,group_id=None,group_name=None):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     if group_id is not None:
                         sql1="""SELECT group_id,group_name,group_description,created_time,updated_time FROM groups WHERE group_id=%s;"""
@@ -333,7 +353,7 @@ class GroupOP:
     #删除分组（设备分组关系表也要一起删）
     async def delete(self,group_id=None,group_name=None):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询是否有该分组
                     if (await isGroupExist(cursor,group_id=group_id) is None):
@@ -355,14 +375,10 @@ class GroupOP:
 
 # 设备-分组关系相关操作
 class RelationOP:
-    # 构造函数，用于使用连接池
-    def __init__(self,Pool:aiomysql.Pool):
-        self.pool:aiomysql.Pool = Pool
-
     # 新建设备-分组关系
     async def create(self,device_id,group_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 查询创建设备-分组关系操作是否合法
                     if (await isDeviceExist(cursor,device_id) is None):
@@ -386,7 +402,7 @@ class RelationOP:
         # 修改某设备-分组关系中分组
     async def updateGroupInRelation(self,device_id,group_id,new_group_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询设备-分组关系是否已经存在
                     if (await isRelationExist(cursor,device_id,group_id) is None):
@@ -404,7 +420,7 @@ class RelationOP:
         # 修改某设备-分组关系中设备
     async def updateDeviceInRelation(self,device_id,group_id,new_device_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询设备-分组关系是否已经存在
                     if (await isRelationExist(cursor,device_id,group_id) is None):
@@ -422,7 +438,7 @@ class RelationOP:
         # 修改分组下所有设备信息
     async def updateAllDevice(self,group_id,devices_update_info):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询分组是否已经存在
                     if (await isGroupExist(cursor,group_id) is None):
@@ -450,7 +466,7 @@ class RelationOP:
         # 根据设备id查询所有所属分组信息
     async def queryAllGroupByDevice(self,device_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     if (await isDeviceExist(cursor,device_id=device_id) is None):
                         raise DeviceOPError("Device NOT FOUND",404)
@@ -472,7 +488,7 @@ class RelationOP:
         # 根据分组id查询所有下属设备信息
     async def queryAllDeviceByGroup(self,group_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     if (await isGroupExist(cursor,group_id=group_id) is None):
                         raise GroupOPError("Group NOT FOUND",404)
@@ -497,7 +513,7 @@ class RelationOP:
         # 删除设备-分组关系
     async def deleteRelation(self,device_id,group_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询是否有该设备-分组关系
                     if (await isRelationExist(cursor,device_id,group_id) is None):
@@ -516,7 +532,7 @@ class RelationOP:
         # 删除某个设备的所有设备-分组关系
     async def deleteAllRelationByDevice(self,device_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询是否有该设备
                     if (await isDeviceExist(cursor,device_id=device_id) is None):
@@ -541,7 +557,7 @@ class RelationOP:
         # 删除某个分组下所有的设备-分组关系
     async def deleteAllRelationByGroup(self,group_id):
         try:
-            async with self.pool.acquire() as conn:
+            async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # 先查询是否有该分组
                     if (await isGroupExist(cursor,group_id=group_id) is None):

@@ -7,3 +7,5 @@ snowflake-id
 bcrypt
 pytest
 httpx
+psutil
+asyncssh
