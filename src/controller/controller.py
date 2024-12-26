@@ -58,7 +58,7 @@ async def Login(ws:WebSocketClientProtocol):
         result = await asyncio.wait_for(ws.recv(),timeout=6)
         result = safe_json_loads(result)
         if result["status"] == "fail":
-            myLogger.info("failed to login,reason:" + result["message"])
+            myLogger.info("failed to login,reason:" + result["Headers"]["message"])
             return False
         else:
             myLogger.info("successfully login.")
@@ -100,10 +100,13 @@ async def public_recv(ws:WebSocketClientProtocol,Events):
             elif response_data.get("type") == "send_statusInfo_response": # 接收到对状态上传的回应
                 Events["receive_statusSend_response"]["data"] = response_data
                 Events["receive_statusSend_response"]["event"].set()
-            elif response_data.get("type") == "give_order":                  # 接收到下达指令
-                await execOrder(ws,response_data,Events["restart_confirm"])  #  注意由于指令执行是我们接收到的是请求，因此我们只需要立即给出回应即可。因此不需要管理所谓的延时，因此可以直接启动相应协程处理，不需要event。
+            elif response_data.get("type") == "give_order":
+                print("hello")                  # 接收到下达指令
+                asyncio.create_task(execOrder(ws,response_data,Events["restart_confirm"]))  # 特别注意！！！ ： 由于在execOrder模块下，我们可能会有await确认的操作（如Restart，确认需要服务端再发信），因此一定不能await调用构成依赖！否则会导致Restart依赖服务端确认才能执行完（否则超时），但是接收服务端确认的public_recv又依赖execOrder结果，导致Restart只能超时，因此这里应该异步启动新任务
+                                                                             #  注意由于指令执行是我们接收到的是请求，因此我们只需要立即给出回应即可。因此不需要管理所谓的延时，因此可以直接启动相应协程处理，不需要event。
                                                                              # 而由于心跳和状态我们接收到的是响应，我们若需要再发出下一次请求，需要主动延时处理，因此使用event。
             elif response_data.get("type") == "restart_confirm":
+                print("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
                 Events["restart_confirm"]["data"] = response_data    # 注意由于python传递了Events的引用，因此后序set的Events["restart_confirm"]["event"]照样可以传递到相应execOrder处理模块下
                 Events["restart_confirm"]["event"].set()
             else:
@@ -180,7 +183,10 @@ async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
 # 5.定义接收指令并执行的函数
 
 async def execOrder(ws:WebSocketClientProtocol,order_request,restartConfirmEvent:asyncio.Event):
-    await order_exec(ws,order_request,restartConfirmEvent,{},Host,Port,sftp_user,sftp_password)
+    try: 
+        await order_exec(ws,order_request,restartConfirmEvent,{},Host,Port,sftp_user,sftp_password)
+    except Exception as e:
+        print(e)
 
 
 # 6.发起连接
