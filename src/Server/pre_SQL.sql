@@ -24,7 +24,7 @@ CREATE TABLE devices(
     UNIQUE (hardware_sn, hardware_model)
 );
 
-CREATE TABLE groups(
+CREATE TABLE group_info(
     group_id INT AUTO_INCREMENT PRIMARY KEY,
     group_name VARCHAR(30) UNIQUE NOT NULL,
     group_description VARCHAR(200) NULL,

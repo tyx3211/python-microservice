@@ -167,10 +167,10 @@ async def isDeviceExist(cursor,device_id=None,SN_Model=None): # SN_Model是(hard
 
 async def isGroupExist(cursor,group_id=None,group_name=None):
     if group_id is not None:
-        sql1="""SELECT group_id FROM groups WHERE group_id=%s;"""
+        sql1="""SELECT group_id FROM group_info WHERE group_id=%s;"""
         await cursor.execute(sql1,(group_id,))
     elif group_name is not None:
-        sql2="""SELECT group_id FROM groups WHERE group_name=%s;"""
+        sql2="""SELECT group_id FROM group_info WHERE group_name=%s;"""
         await cursor.execute(sql2,(group_name,))
     else:
         raise GroupOPError("Missing required parameters!",400)
@@ -288,11 +288,11 @@ class GroupOP:
                     if (await isGroupExist(cursor,group_name=group_name) is not None):
                         raise GroupOPError("Group already exists.",409) # Conflict错误码，资源已存在
                     # 再正式注册分组
-                    sql = """INSERT INTO groups(group_id,group_name,group_description,created_time,updated_time) VALUES(DEFAULT,%s,%s,%s,%s);"""
+                    sql = """INSERT INTO group_info(group_id,group_name,group_description,created_time,updated_time) VALUES(DEFAULT,%s,%s,%s,%s);"""
                     group_info = addTimestamp(group_info,isCreated=True) # 包装created_time和updated_time
                     await cursor.execute(sql,group_info)
                     # 查看分组ID
-                    sql2 = """SELECT group_id from groups WHERE group_name=%s"""
+                    sql2 = """SELECT group_id from group_info WHERE group_name=%s"""
                     await cursor.execute(sql2,(group_name,))
                     result = await cursor.fetchone()
                     await conn.commit()
@@ -313,7 +313,7 @@ class GroupOP:
                     if (await isGroupExist(cursor,group_id) is None):
                         raise GroupOPError("Group NOT FOUND.",404)
                     # 再生成update_sql
-                    sql = getUpdateSQL("UPDATE groups SET ",update_info,group_updated_fields,"WHERE group_id = %s;")
+                    sql = getUpdateSQL("UPDATE group_info SET ",update_info,group_updated_fields,"WHERE group_id = %s;")
                     update_info = clearInfoNoneColumn(update_info)
                     update_info = addTimestamp(update_info)
                     await cursor.execute(sql,update_info + (group_id,))
@@ -331,10 +331,10 @@ class GroupOP:
             async with pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     if group_id is not None:
-                        sql1="""SELECT group_id,group_name,group_description,created_time,updated_time FROM groups WHERE group_id=%s;"""
+                        sql1="""SELECT group_id,group_name,group_description,created_time,updated_time FROM group_info WHERE group_id=%s;"""
                         await cursor.execute(sql1,(group_id,))
                     elif group_name is not None:
-                        sql2="""SELECT group_id,group_name,group_description,created_time,updated_time FROM groups WHERE group_name=%s;"""
+                        sql2="""SELECT group_id,group_name,group_description,created_time,updated_time FROM _info WHERE group_name=%s;"""
                         await cursor.execute(sql2,(group_name,))
                     result = await cursor.fetchone()
                     await conn.commit()
@@ -363,7 +363,7 @@ class GroupOP:
                     sql1 = """DELETE FROM relations WHERE group_id=%s"""
                     await cursor.execute(sql1,(group_id,))
                         # 再删除分组
-                    sql2 = """DELETE FROM groups WHERE group_id=%s"""
+                    sql2 = """DELETE FROM group_info WHERE group_id=%s"""
                     await cursor.execute(sql2,(group_id,))
                     await conn.commit()
         except Exception as e:
@@ -470,7 +470,7 @@ class RelationOP:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     if (await isDeviceExist(cursor,device_id=device_id) is None):
                         raise DeviceOPError("Device NOT FOUND",404)
-                    sql="""SELECT group_id,group_name,group_description,created_time,updated_time FROM groups WHERE group_id IN (SELECT group_id FROM relations WHERE device_id=%s);"""
+                    sql="""SELECT group_id,group_name,group_description,created_time,updated_time FROM group_info WHERE group_id IN (SELECT group_id FROM relations WHERE device_id=%s);"""
                     await cursor.execute(sql,(device_id,))
                     result = await cursor.fetchall()
                     await conn.commit()
