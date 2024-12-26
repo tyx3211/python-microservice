@@ -5,6 +5,7 @@ import time
 import websockets
 from websockets.legacy.client import WebSocketClientProtocol
 from logger import myLogger
+from execorder import order_exec
 
 import getStatusInfo
 
@@ -22,7 +23,12 @@ device_id = ""
 
 # 服务端HOST以及端口配置
 
-server_url = "ws://127.0.0.1:9090/ws"
+Host = ""
+Port = None
+server_url = ""
+
+sftp_user = ""
+sftp_password = ""
 
 def safe_json_loads(json_string):
     try:
@@ -76,7 +82,8 @@ def get_events():
     Events = {
         "ping_pong":{"event":asyncio.Event(),"data":None},
         "receive_statusSend_response":{"event":asyncio.Event(),"data":None},
-        "receive_sendInstruction":{"event":asyncio.Event(),"data":None}
+        # "receive_sendInstruction":{"event":asyncio.Event(),"data":None}
+        "restart_confirm":{"event":asyncio.Event(),"data":None} # 这个Event仅用来针对重启指令，接收云端的确认重启回复
     }
     return Events
 
@@ -98,9 +105,12 @@ async def public_recv(ws:WebSocketClientProtocol,Events):
             elif response_data.get("type") == "send_statusInfo_response": # 接收到对状态上传的回应
                 Events["receive_statusSend_response"]["data"] = response_data
                 Events["receive_statusSend_response"]["event"].set()
-            elif response_data.get("type") == "give_order": # 接收到下达指令
-                Events["receive_sendInstruction"]["data"] = response_data
-                Events["receive_sendInstruction"]["event"].set()
+            elif response_data.get("type") == "give_order":                  # 接收到下达指令
+                await execOrder(ws,response_data,Events["restart_confirm"])  #  注意由于指令执行是我们接收到的是请求，因此我们只需要立即给出回应即可。因此不需要管理所谓的延时，因此可以直接启动相应协程处理，不需要event。
+                                                                             # 而由于心跳和状态我们接收到的是响应，我们若需要再发出下一次请求，需要主动延时处理，因此使用event。
+            elif response_data.get("type") == "restart_confirm":
+                Events["restart_confirm"]["data"] = response_data    # 注意由于python传递了Events的引用，因此后序set的Events["restart_confirm"]["event"]照样可以传递到相应execOrder处理模块下
+                Events["restart_confirm"]["event"].set()
             else:
                 pass
         except websockets.exceptions.ConnectionClosed: # 处理连接关闭异常
@@ -156,7 +166,7 @@ async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
             event["event"].clear()
             failureCount = 0 # 成功一次后失败次数就清零
             myLogger.info(f"successfuly send StatusInfo")
-            
+
             await asyncio.sleep(wait_time_from(last_send_status,15)) # 每隔15s发送状态报文
         except asyncio.TimeoutError:
             myLogger.info(f"Timeout! Failed to send StatusInfo.")
@@ -174,8 +184,8 @@ async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
 
 # 5.定义接收指令并执行的函数
 
-async def execOrder(ws:WebSocketClientProtocol,event):
-    pass
+async def execOrder(ws:WebSocketClientProtocol,order_request,restartConfirmEvent:asyncio.Event):
+    await order_exec(ws,order_request,restartConfirmEvent,{},Host,Port,sftp_user,sftp_password)
 
 
 # 6.发起连接
@@ -183,15 +193,16 @@ async def execOrder(ws:WebSocketClientProtocol,event):
 async def connect():
     while True:
         try:
+            myLogger.info("Ready to connect to Server.")
             async with websockets.connect(server_url) as ws: # 发起webSocket连接，连接成功后webSocket对象引用给到ws
+                myLogger.info("successfully connect to Server.")
                 # 先鉴权
                 if await Login(ws) is False:
                     continue
                 # 写事件分派
                 events = get_events()
-                asyncio.create_task(public_recv(ws,events)) # 异步添加公共接受点任务
+                asyncio.create_task(public_recv(ws,events)) # 异步添加公共接受点任务（在其中也解决了对指令执行的调动）
                 asyncio.create_task(uploadStatusInfo(ws,events["receive_statusSend_response"])) # 异步添加上传状态信息任务   
-                asyncio.create_task(execOrder(ws,events["receive_sendInstruction"])) # 异步添加执行下达指令任务
                 await ping_pong(ws,events["ping_pong"]) # 开始ping-pong 心跳，心跳结束即进入重连
         except Exception as e:
             myLogger.error(f"Error: {e},disconnect to Server.")
@@ -200,13 +211,22 @@ async def connect():
 
 # 7. 暴露给外界自定义功能
 
-async def startControllerBasicApp(host=None,port=None):
+async def startControllerBasicApp(host=None,port=None,sftpUser=None,sftpPassword=None,outer_order_list={}):
     ####
-    global server_url
+    global server_url,Host,Port,sftp_user,sftp_password
+    Host = host
+    Port = port
     server_url = f"ws://{host}:{port}/ws"
+    sftp_user = sftpUser
+    sftp_password = sftpPassword
 
-    ###
+    ####
     asyncio.run(connect())
 
 if __name__ == "__main__":
+    Host = "127.0.0.1"
+    Port = 9090
+    server_url = "ws://127.0.0.1:9090/ws"
+    sftp_user = ""
+    sftp_password = ""
     asyncio.run(connect())

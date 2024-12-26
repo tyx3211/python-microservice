@@ -167,22 +167,33 @@ async def public_recv(ws:WebSocketClientProtocol,Events,device_id):
 
 # 定义指令下发函数，可供北向接口使用
 
+devices_instruction_dealing = {} # 记录哪个设备正在处理指令的字典
+
 async def giveOrder(device_id,order):
     if (device_id not in DevicesOnlineState) or (DevicesOnlineState["device_id"] == "offline"):
         return response.json({"status":"fail","message":"Device is offline!"})
     if DevicesOnlineState["device_id"] == "Unknown":
         return response.json({"status":"fail","message":"Device state is Unknown!"})
     
+    if not ((device_id not in devices_instruction_dealing) or devices_instruction_dealing[device_id] == False): # 对单设备的并发控制
+        return response.json({"status":"fail","message":"Device busy!"})
+    devices_instruction_dealing[device_id] = True
     Ws = device_websocket_map[device_id]["ws"]
     ReceiveResultEvent = device_websocket_map[device_id]["receiveOrderResultEvent"]
 
     # 下达指令
     await Ws.send(json.dumps(order))
     await asyncio.wait_for(ReceiveResultEvent.wait(),timeout=10) # 当边端回应时可继续，但不能超过10s，否则认为这次指令下达失败
+
+    if order["Headers"]["order_type"] == "restart": # 对于重启，额外确认
+        await Ws.send(json.dumps({"type":"restart_confirm","Headers":{},"data":{}}))
+
     result = ReceiveResultEvent["data"]
     if result["status"] == "success":
+        devices_instruction_dealing[device_id] = False
         return response.json({"status":"success"})
     else:
+        devices_instruction_dealing[device_id] = False
         return response.json({"status":"fail","message":result["message"]})
 
 async def Ws_Serve_Core(ws:WebSocketClientProtocol):

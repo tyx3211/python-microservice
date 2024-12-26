@@ -14,7 +14,7 @@ from urllib.parse import unquote
 from Database_OP import connect_to_database,close_database
 from Database_OP import DeviceOP,GroupOP,RelationOP
 from Database_OP import DeviceOPError,GroupOPError,RelationOPError,DataBaseError
-from south_api_core import Ws_Serve_Core,queryDeviceStatusInfo
+from south_api_core import Ws_Serve_Core,queryDeviceStatusInfo,giveOrder,DevicesOnlineState
 
 gen = SnowflakeGenerator(1) # 雪花ID生成器
 
@@ -129,7 +129,8 @@ async def setup_db(app,loop):
     
 @app.listener("after_server_stop")
 async def close_db(app,loop):
-    # 服务正式启动前先连接数据库
+    # if len(DevicesOnlineState)!= 0:
+
     await close_database()
 
 #############################################################
@@ -493,7 +494,8 @@ async def delete_group_all_relation(request):
 ###################################################################################
 
 # 和南向接口配合的北向接口
-@app.get("/service/device_statusInfo_query/<device_id>")
+    # 查询设备状态信息
+@app.get("/service/devices_manage/device_statusInfo_query/<device_id>")
 async def device_statusInfo_query(request,device_id):
     result = queryDeviceStatusInfo(device_id)
     if result is None:
@@ -501,6 +503,34 @@ async def device_statusInfo_query(request,device_id):
     else:
         print(result)
         return response.json({"status":"success","data":result})
+    
+    # 下发指令
+@app.post("/service/devices_manage/give_order")
+async def give_order(request):
+    result={}
+    if checkJsonParams(request,["device_id","order"],result) is False: # 至少需要提供device_id和order
+        return result["result"]
+    
+    try:
+        dic = request.json
+        device_id = dic["device_id"]
+        if type(dic["order"]) is not str:
+            return response.json({"status":"fail","message":"order must be string."})
+        
+        deal_dic = {"type":"give_order","Headers":{"order_type":dic["order"]},"data":{dic["device_id"]}}
+        if dic["order"] in ("restart","upload_log"):
+            deal_dic["Headers"]["isInner"] = True
+            if dic["order"] == "upload_log":
+                dic["data"]["remote_dir"] = "/var/log/devices_management"
+        else:
+            deal_dic["Headers"]["isInner"] = False
+            if ("params" not in dic) or (isinstance(dic["params"],list) is False):
+                return response.json({"status":"fail","message":"invalid JSON."})
+            else:
+                deal_dic["data"]["params"] = dic["params"]
+        await giveOrder(device_id,deal_dic)
+    except Exception as e:
+        return response.json({"status":"fail","message":"Server unknown error."})
 
 # 南向接口
 @app.websocket("/ws")
