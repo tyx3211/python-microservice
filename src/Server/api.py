@@ -6,6 +6,8 @@ from sanic.exceptions import ServerError
 from websockets.legacy.client import WebSocketClientProtocol
 import asyncio
 import aiomysql
+import os
+import stat
 from sanic.log import logger,error_logger
 from snowflake import SnowflakeGenerator
 import bcrypt
@@ -126,6 +128,12 @@ async def setup_db(app,loop):
     deviceOP = DeviceOP()
     groupOP = GroupOP()
     relationOP = RelationOP()
+
+    log_dir = "/var/log/devices_management"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir) # 确保保存设备上传日志的目录存在
+        os.chmod("/var/log/devices_management", stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)  # 777权限，所有人都可读写执行(保证边端设备日志上传)
+
     
 @app.listener("after_server_stop")
 async def close_db(app,loop):
@@ -517,19 +525,23 @@ async def give_order(request):
         if type(dic["order"]) is not str:
             return response.json({"status":"fail","message":"order must be string."})
         
-        deal_dic = {"type":"give_order","Headers":{"order_type":dic["order"]},"data":{dic["device_id"]}}
+        print(dic)
+        deal_dic = {"type":"give_order","Headers":{"order_type":dic["order"]},"data":{"device_id":dic["device_id"]}}
+        print(deal_dic)
         if dic["order"] in ("restart","upload_log"):
             deal_dic["Headers"]["isInner"] = True
             if dic["order"] == "upload_log":
-                dic["data"]["remote_dir"] = "/var/log/devices_management"
+                deal_dic["data"]["remote_dir"] = "/var/log/devices_management"
         else:
             deal_dic["Headers"]["isInner"] = False
             if ("params" not in dic) or (isinstance(dic["params"],list) is False):
                 return response.json({"status":"fail","message":"invalid JSON."})
             else:
                 deal_dic["data"]["params"] = dic["params"]
-        await giveOrder(device_id,deal_dic)
+        deviceResponse = await giveOrder(device_id,deal_dic)
+        return deviceResponse
     except Exception as e:
+        print(e)
         return response.json({"status":"fail","message":"Server unknown error."})
 
 # 南向接口

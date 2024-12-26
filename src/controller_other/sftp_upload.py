@@ -16,18 +16,20 @@ async def sftp_upload_log(device_id: str, log_file: str, remote_dir: str, sftp_h
     :param sftp_password: SFTP 密码。
     """
     # 确保日志目录和文件存在，不存在就创建
-    # if not os.path.exists(log_file):
-    #     with open(log_file, 'w') as file:
-    #         pass
+    if not os.path.exists(log_file):
+        with open(log_file, 'w') as file:
+            pass
 
     remote_file = os.path.join(remote_dir, f"{device_id}.log")
     
     # 使用 asyncssh 执行 SFTP 上传操作
     try:
         myLogger.info("try to upload log.")
-        async with asyncssh.connect(sftp_host, port=sftp_port, username=sftp_username, password=sftp_password) as conn:
+        async with asyncssh.connect(sftp_host, port=sftp_port, username=sftp_username, password=sftp_password,known_hosts=None) as conn:
             sftp = await conn.start_sftp_client()
             # 上传文件
+            print(log_file)
+            print(remote_file)
             await sftp.put(log_file, remote_file)
             myLogger.info(f"Successfully uploaded {log_file} to {remote_file}")
             return True

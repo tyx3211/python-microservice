@@ -1,4 +1,4 @@
-from controller.controller import startControllerBasicApp
+from controller import startControllerBasicApp
 from User import user,password # 这个实际不需要
 
 Host = "47.97.81.99"
@@ -13,5 +13,12 @@ startControllerBasicApp(
     host=Host,
     port=Port,
     sftpUser=sftp_user,
-    sftp_password=sftp_password
+    sftpPassword=sftp_password,
+    Device={
+        "hardware":{
+            "sn":"SN123456789",
+            "model":"ModelA"
+        }
+    },
+    Device_password = "testpassword123"
 )
