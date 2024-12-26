@@ -10,12 +10,7 @@ from execorder import order_exec
 import getStatusInfo
 
 # 边端设备至少记录了SN_MODEL对和password
-device = {
-    "hardware":{
-        "sn":"SN123456789",
-        "model":"ModelA"
-    }
-}
+device = {}
 
 password = "test-password"
 
@@ -211,14 +206,20 @@ async def connect():
 
 # 7. 暴露给外界自定义功能
 
-async def startControllerBasicApp(host=None,port=None,sftpUser=None,sftpPassword=None,outer_order_list={}):
+async def startControllerBasicApp(host=None,port=None,sftpUser=None,sftpPassword=None,Device={"hardware":{"sn":"","model":""}},outer_order_list={}):
     ####
-    global server_url,Host,Port,sftp_user,sftp_password
+    global server_url,Host,Port,sftp_user,sftp_password,device
     Host = host
     Port = port
     server_url = f"ws://{host}:{port}/ws"
     sftp_user = sftpUser
     sftp_password = sftpPassword
+    device = {
+        "hardware":{
+            "sn":"SN123456789",
+            "model":"ModelA"
+        }
+    }
 
     ####
     asyncio.run(connect())
