@@ -156,7 +156,7 @@ async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
     global failureCount,Flag,latestBussinessTimeStamp
     while True:
         try:
-            StatusInfo = getStatusInfo.easyTest()
+            StatusInfo = getStatusInfo.collect_status_info()
             await ws.send(json.dumps({"type":"upload_status_info","Headers":{},"data":StatusInfo}))
             myLogger.info(f"Send StatusInfo")
             Flag = 1
