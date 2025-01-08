@@ -14,16 +14,11 @@ import bcrypt
 from urllib.parse import unquote
 
 from Database_OP import connect_to_database,close_database
-from Database_OP import DeviceOP,GroupOP,RelationOP
+from Database_OP import deviceOP,groupOP,relationOP
 from Database_OP import DeviceOPError,GroupOPError,RelationOPError,DataBaseError
 from south_api_core import Ws_Serve_Core,queryDeviceStatusInfo,giveOrder,DevicesOnlineState
 
 gen = SnowflakeGenerator(1) # 雪花ID生成器
-
-# 数据库操作对象
-deviceOP = None
-groupOP = None
-relationOP = None
 
 # 创建Sanic应用
 app = Sanic("webSocketServer")
@@ -123,11 +118,7 @@ def dealException(e:Exception):
 @app.listener("before_server_start")
 async def setup_db(app,loop):
     # 服务正式启动前先连接数据库
-    global deviceOP,groupOP,relationOP
     await connect_to_database()
-    deviceOP = DeviceOP()
-    groupOP = GroupOP()
-    relationOP = RelationOP()
 
     log_dir = "/var/log/devices_management"
     if not os.path.exists(log_dir):

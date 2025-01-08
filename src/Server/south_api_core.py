@@ -8,13 +8,10 @@ import bcrypt
 import websockets
 from sanic import response
 from websockets.legacy.client import WebSocketClientProtocol
-from Database_OP import DeviceOP,GroupOP,RelationOP
+from Database_OP import deviceOP,groupOP,relationOP
 
 
 device_websocket_map = {} # 用于保存设备和其对应的webSocket连接的字典,并顺带保存和该device和当前webSocket关联的giveOrderEvent
-deviceOP = DeviceOP() # Sanic服务启动后用于操作数据库的对象
-groupOP = GroupOP()
-relationOP = RelationOP()
 
 def safe_json_loads(json_string):
     try:

@@ -12,11 +12,7 @@ import sys
 
 from logger import myLogger
 from sftp_upload import sftp_upload_log
-
-HOST = None
-PORT = None
-SFTPUSER = None
-SFTPPASSWORD = None
+from config import config
 
 async def inner_order_exec(ws:WebSocketClientProtocol,order_request,restartConfirmEvent:asyncio.Event,outer_order_dict):
     if order_request["Headers"]["order_type"] == "restart":
@@ -35,24 +31,19 @@ async def inner_order_exec(ws:WebSocketClientProtocol,order_request,restartConfi
         dir = os.path.dirname(__file__)
         log_file = os.path.join(dir,"log","app.log")
         try:
-            if await sftp_upload_log(device_id,log_file,remote_dir,HOST,22,SFTPUSER,SFTPPASSWORD) is False:
+            if await sftp_upload_log(device_id,log_file,remote_dir,config.sftp_host,config.sftp_port,config.sftp_username,config.sftp_password) is False:
                 await ws.send(json.dumps({"type":"upload_instruction_result","status":"fail","Headers":{"message":"fail to upload log."},"data":{}}))
             else:
                 await ws.send(json.dumps({"type":"upload_instruction_result","status":"success","Headers":{"message":"successfully upload log."},"data":{}}))
         except Exception:
             pass
 
-async def outer_order_exec(ws:WebSocketClientProtocol,order_request,restartConfirmEvent:asyncio.Event,outer_order_dict):
+async def outer_order_exec(ws:WebSocketClientProtocol,order_request,restartConfirmEvent:asyncio.Event):
     pass
 
-async def order_exec(ws:WebSocketClientProtocol,order_request,restartConfirmEvent:asyncio.Event,outer_order_dict,host,port,sftp_user,sftp_password):
-    global HOST,PORT,SFTPUSER,SFTPPASSWORD
-    HOST = host
-    PORT = port
-    SFTPUSER = sftp_user
-    SFTPPASSWORD = sftp_password
+async def order_exec(ws:WebSocketClientProtocol,order_request,restartConfirmEvent:asyncio.Event):
     myLogger.info("receive instruction from Server:" + str(order_request["Headers"]["order_type"]))
     if order_request["Headers"]["isInner"] == True:
-        await inner_order_exec(ws,order_request,restartConfirmEvent,outer_order_dict)
+        await inner_order_exec(ws,order_request,restartConfirmEvent,config.outer_order_dict)
     else:
-        await outer_order_exec(ws,order_request,restartConfirmEvent,outer_order_dict)
+        await outer_order_exec(ws,order_request,restartConfirmEvent,config.outer_order_dict)

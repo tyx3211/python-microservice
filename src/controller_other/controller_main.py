@@ -8,22 +8,11 @@ from logger import myLogger
 from execorder import order_exec
 
 import getStatusInfo
+from config import config,Config
 
-# 边端设备至少记录了SN_MODEL对和password
-device = {}
-
-device_password = "test-password"
-
-device_id = ""
+# 边端设备至少记录了SN_MODEL对和password，因此可以直接从config中获取
 
 # 服务端HOST以及端口配置
-
-Host = ""
-Port = None
-server_url = ""
-
-sftp_user = ""
-sftp_password = ""
 
 def safe_json_loads(json_string):
     try:
@@ -51,10 +40,10 @@ def wait_time_from(timestamp:float,delay:float)->int:
 async def Login(ws:WebSocketClientProtocol):
     try:
         myLogger.info("try to login.")
-        if device_id == "":
-            await ws.send(json.dumps({"device_sn":device["hardware"]["sn"],"device_model":device["hardware"]["model"],"password":password}))
+        if config.device_id == "":
+            await ws.send(json.dumps({"device_sn":config.device_hardware_sn,"device_model":config.device_hardware_model,"password":config.device_password}))
         else:
-            await ws.send(json.dumps({"device_id":device_id}))
+            await ws.send(json.dumps({"device_id":config.device_id}))
         result = await asyncio.wait_for(ws.recv(),timeout=6)
         result = safe_json_loads(result)
         if result["status"] == "fail":
@@ -184,7 +173,7 @@ async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
 
 async def execOrder(ws:WebSocketClientProtocol,order_request,restartConfirmEvent:asyncio.Event):
     try: 
-        await order_exec(ws,order_request,restartConfirmEvent,{},Host,Port,sftp_user,sftp_password)
+        await order_exec(ws,order_request,restartConfirmEvent)
     except Exception as e:
         print(e)
 
@@ -195,7 +184,7 @@ async def connect():
     while True:
         try:
             myLogger.info("Ready to connect to Server.")
-            async with websockets.connect(server_url) as ws: # 发起webSocket连接，连接成功后webSocket对象引用给到ws
+            async with websockets.connect(config.server_url) as ws: # 发起webSocket连接，连接成功后webSocket对象引用给到ws
                 myLogger.info("successfully connect to Server.")
                 # 先鉴权
                 if await Login(ws) is False:
@@ -212,31 +201,23 @@ async def connect():
 
 # 7. 暴露给外界自定义功能
 
-def startControllerBasicApp(host=None,port=None,sftpUser=None,sftpPassword=None,Device={"hardware":{"sn":"","model":""}},Device_password="",outer_order_list={}):
-    ####
-    global server_url,Host,Port,sftp_user,sftp_password,device,password
-    Host = host
-    Port = port
-    server_url = f"ws://{host}:{port}/ws"
-    sftp_user = sftpUser
-    sftp_password = sftpPassword
-    device = Device
-    password = Device_password
+# startControllerBasicApp要有和Config类一样的参数，以便于外部调用时传入配置信息
 
-    ####
+def startControllerBasicApp(host=None, port=None, sftp_host=None, sftp_port=None, sftp_username=None, sftp_password=None, device_id=None, device_password=None, device_hardware_sn=None, device_hardware_model=None, outer_order_dict=[]):
+    config = Config(host=host, port=port, sftp_host=sftp_host, sftp_port=sftp_port, sftp_username=sftp_username, sftp_password=sftp_password, device_id=device_id, device_password=device_password, device_hardware_sn=device_hardware_sn, device_hardware_model=device_hardware_model, outer_order_dict=outer_order_dict)
     asyncio.run(connect())
 
-if __name__ == "__main__":
-    Host = "127.0.0.1"
-    Port = 9090
-    server_url = "ws://127.0.0.1:9090/ws"
-    sftp_user = ""
-    sftp_password = ""
-    device = {
-        "hardware":{
-            "sn":"SN123456789",
-            "model":"ModelA"
-        }
-    }
-    password = "testpassword123"
-    asyncio.run(connect())
+# if __name__ == "__main__":
+#     Host = "127.0.0.1"
+#     Port = 9090
+#     server_url = "ws://127.0.0.1:9090/ws"
+#     sftp_user = ""
+#     sftp_password = ""
+#     device = {
+#         "hardware":{
+#             "sn":"SN123456789",
+#             "model":"ModelA"
+#         }
+#     }
+#     password = "testpassword123"
+    # asyncio.run(connect())

@@ -10,21 +10,32 @@ import bcrypt
 from sanic.log import logger,error_logger
 import time
 import math
+import json
+import os
 
 # gen = SnowflakeGenerator(1) # 雪花ID生成器
 
 
 # 配置Host，Port，数据库User和Password
 
-Host="127.0.0.1"
-Port=3306
-User="root"
-Password="root"
+Host = ""
+Port = None
+User = ""
+Password = ""
+
+# 获取当前文件所在目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# 构建database_ini.json文件的绝对路径
+file_path = os.path.join(current_dir, "database_ini.json")
+
+with open(file_path, 'r') as file:
+    Host, Port, User, Password = json.load(file).values()  # 解析 JSON 数据为字典 并解构
 
 pool:aiomysql.Pool = None
 
 async def connect_to_database():
-    global pool,deviceOP,groupOP,relationOP
+    global pool
     # 初始化连接池
     pool = await aiomysql.create_pool(
         host=Host,
@@ -582,3 +593,9 @@ class RelationOP:
         # 删除某个分组下所属的所有设备
     async def deleteAllRelatedDeviceByGroup(self,group_id):
         pass
+    
+    
+# 构造暴露单例对象
+deviceOP = DeviceOP()
+groupOP = GroupOP()
+relationOP = RelationOP()

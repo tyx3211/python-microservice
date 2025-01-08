@@ -1,4 +1,4 @@
-from controller import startControllerBasicApp
+from controller_main import startControllerBasicApp
 from User import user,password # 这个实际不需要
 
 Host = "47.97.81.99"
