@@ -79,10 +79,7 @@ async def public_recv(ws:WebSocketClientProtocol,Events):
         try:          
             response = await ws.recv()
             response_data = safe_json_loads(response)
-            print(response_data)
-            if response_data is None:
-                print(response_data)
-                continue
+            print(response_data) # 打印接收到的消息，用于调试
             # 启动分发（这里需要这么处理，而微服务端有更简单的处理方式的主要原因是：心跳和状态报文都是客户端主动发出的，且其延时都需要客户端去主动控制，按照服务端的方法放在一个协程里，会导致不能并发处理而阻塞）
             #        （服务端可以那么处理，主要是它其实只需要立即回信，延时是由客户端控制的）
             if response_data.get("type") == "ping_pong": # 接收到pong帧
@@ -92,12 +89,12 @@ async def public_recv(ws:WebSocketClientProtocol,Events):
                 Events["receive_statusSend_response"]["data"] = response_data
                 Events["receive_statusSend_response"]["event"].set()
             elif response_data.get("type") == "give_order":
-                print("hello")                  # 接收到下达指令
+                # print("hello")                 # 接收到下达指令
                 asyncio.create_task(execOrder(ws,response_data,Events["restart_confirm"]))  # 特别注意！！！ ： 由于在execOrder模块下，我们可能会有await确认的操作（如Restart，确认需要服务端再发信），因此一定不能await调用构成依赖！否则会导致Restart依赖服务端确认才能执行完（否则超时），但是接收服务端确认的public_recv又依赖execOrder结果，导致Restart只能超时，因此这里应该异步启动新任务
                                                                              #  注意由于指令执行是我们接收到的是请求，因此我们只需要立即给出回应即可。因此不需要管理所谓的延时，因此可以直接启动相应协程处理，不需要event。
                                                                              # 而由于心跳和状态我们接收到的是响应，我们若需要再发出下一次请求，需要主动延时处理，因此使用event。
             elif response_data.get("type") == "restart_confirm":
-                print("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
+                # print("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
                 Events["restart_confirm"]["data"] = response_data    # 注意由于python传递了Events的引用，因此后序set的Events["restart_confirm"]["event"]照样可以传递到相应execOrder处理模块下
                 Events["restart_confirm"]["event"].set()
             else:
@@ -179,7 +176,8 @@ async def execOrder(ws:WebSocketClientProtocol,order_request,restartConfirmEvent
     try: 
         await order_exec(ws,order_request,restartConfirmEvent)
     except Exception as e:
-        print(e)
+        # print(e)
+        pass
 
 
 # 6.发起连接

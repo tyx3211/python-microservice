@@ -52,7 +52,7 @@ async def loginCheck(ws:WebSocketClientProtocol,result):
         elif ("device_sn" in loginInfo) and ("device_model" in loginInfo):
             try:
                 queryResult = await deviceOP.query(SN_Model=(loginInfo["device_sn"],loginInfo["device_model"]))
-                print(queryResult)
+                # print(queryResult)
             except Exception as e:
                 await ws.send(json.dumps({"status":"fail","message":str(e)}))
                 return False
@@ -70,7 +70,7 @@ async def loginCheck(ws:WebSocketClientProtocol,result):
         await ws.send(json.dumps({"status":"fail","message":"TimeOut."}))
         return False
     except Exception as e:
-        print(e)
+        # print(e)
         await ws.send(json.dumps({"status":"fail","message":"Unknown Error"}))
         return False
 
@@ -126,7 +126,7 @@ async def public_recv(ws:WebSocketClientProtocol,Events,device_id):
                 t = 5.5  
             response = await asyncio.wait_for(ws.recv(),timeout=10)
             response_data = safe_json_loads(response)
-            print(response_data)
+            print(response_data) # 打印接收到的报文，仅用于调试
             if response_data is None:
                 continue
             ##########考虑状态转换
@@ -182,31 +182,34 @@ async def giveOrder(device_id,order):
     if ((device_id in devices_instruction_dealing) and devices_instruction_dealing.get(device_id) == True): # 对单设备的并发控制
         return response.json({"status":"fail","message":"Device busy!"})
     devices_instruction_dealing[device_id] = True
-    print(device_websocket_map)
+    # print(device_websocket_map)
     Ws = device_websocket_map[device_id]["ws"]
     ReceiveResultEvent = device_websocket_map[device_id]["receiveOrderResultEvent"]
 
     # 下达指令
-    await Ws.send(json.dumps(order))
-    await asyncio.wait_for(ReceiveResultEvent["event"].wait(),timeout=3) # 当边端回应时可继续，但不能超过10s，否则认为这次指令下达失败
-    ReceiveResultEvent["event"].clear()
+    try:
+        await Ws.send(json.dumps(order))
+        await asyncio.wait_for(ReceiveResultEvent["event"].wait(),timeout=3) # 当边端回应时可继续，但不能超过10s，否则认为这次指令下达失败
+        ReceiveResultEvent["event"].clear()
 
-    if order["Headers"]["order_type"] == "restart": # 对于重启，额外确认
-        print("yohhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")
-        try:
-            await Ws.send(json.dumps({"type":"restart_confirm","Headers":{},"data":{}}))
-        except Exception as e:
-            print(f"wifiwfiowjfiowjjf{e}")
+        if order["Headers"]["order_type"] == "restart": # 对于重启，额外确认
+            try:
+                await Ws.send(json.dumps({"type":"restart_confirm","Headers":{},"data":{}}))
+            except Exception as e:
+                pass
 
-    result = ReceiveResultEvent["data"]
-    if result["status"] == "success":
-        print("yesssssssssssssssssssssssssssssss")
+        result = ReceiveResultEvent["data"]
+        if result["status"] == "success":
+            devices_instruction_dealing[device_id] = False
+            return response.json({"status":"success","data":{}})
+        else:
+            devices_instruction_dealing[device_id] = False
+            # print(result)
+            return response.json({"status":"fail","message":result["Headers"]["message"]})
+    except Exception:
         devices_instruction_dealing[device_id] = False
-        return response.json({"status":"success","data":{}})
-    else:
-        devices_instruction_dealing[device_id] = False
-        print(result)
-        return response.json({"status":"fail","message":result["Headers"]["message"]})
+        return response.json({"status":"fail","message":"Unknown Error!"})
+    
 
 async def Ws_Serve_Core(ws:WebSocketClientProtocol):
     # 先登录鉴权

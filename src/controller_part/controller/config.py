@@ -88,8 +88,8 @@ class Config:
             
         # 通过参数中的device_log_dir和device_log_name生成device_log_local_path,如果参数中没有指定device_log_dir则默认使用当前目录下的log文件夹
         if device_log_dir and device_log_name:
-            print("device_log_dir:", device_log_dir)
-            print("device_log_name:", device_log_name)
+            # print("device_log_dir:", device_log_dir)
+            # print("device_log_name:", device_log_name)
             self.device_log_local_path = os.path.join(device_log_dir, device_log_name)
         
 # 暴露单例对象

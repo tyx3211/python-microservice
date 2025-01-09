@@ -500,7 +500,7 @@ async def device_statusInfo_query(request,device_id):
     if result is None:
         return response.json({"status":"fail","message":"wrong device_id OR offline device."})
     else:
-        print(result)
+        # print(result)
         return response.json({"status":"success","data":result})
     
     # 下发指令
@@ -516,29 +516,29 @@ async def give_order(request):
         if type(dic["order"]) is not str:
             return response.json({"status":"fail","message":"order must be string."})
         
-        print(dic)
+        # print(dic)
         deal_dic = {"type":"give_order","Headers":{"order_type":dic["order"]},"data":{"device_id":dic["device_id"]}}
-        print(deal_dic)
+        # print(deal_dic)
         if dic["order"] in ("restart","upload_log"):
             deal_dic["Headers"]["isInner"] = True
             if dic["order"] == "upload_log":
                 deal_dic["data"]["remote_dir"] = "/var/log/devices_management"
         else:
             deal_dic["Headers"]["isInner"] = False
-            if ("params" not in dic) or (isinstance(dic["params"],list) is False):
+            if ("params" not in dic) or (isinstance(dic["params"],dict) is False):
                 return response.json({"status":"fail","message":"invalid JSON."})
             else:
                 deal_dic["data"]["params"] = dic["params"]
         deviceResponse = await giveOrder(device_id,deal_dic)
         return deviceResponse
     except Exception as e:
-        print(e)
+        # print(e)
         return response.json({"status":"fail","message":"Server unknown error."})
 
 # 南向接口
 @app.websocket("/ws")
 async def Ws_Serve(request,ws:WebSocketClientProtocol):
-    print("hhh")
+    # print("hhh")
     await Ws_Serve_Core(ws)
 
 if __name__ == "__main__":
