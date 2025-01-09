@@ -510,6 +510,7 @@ async def delete_group_all_device(request):
         await relationOP.deleteAllRelatedDeviceByGroup(dic["group_id"])
         return response.json({"status":"success","data":{}},status=200)
     except Exception as e:
+        print(e)
         return dealException(e)
 
 

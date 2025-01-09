@@ -380,7 +380,7 @@ class GroupOP:
                         sql1="""SELECT group_id,group_name,group_description,created_time,updated_time FROM group_info WHERE group_id=%s;"""
                         await cursor.execute(sql1,(group_id,))
                     elif group_name is not None:
-                        sql2="""SELECT group_id,group_name,group_description,created_time,updated_time FROM _info WHERE group_name=%s;"""
+                        sql2="""SELECT group_id,group_name,group_description,created_time,updated_time FROM group_info WHERE group_name=%s;"""
                         await cursor.execute(sql2,(group_name,))
                     result = await cursor.fetchone()
                     await conn.commit()
@@ -652,17 +652,17 @@ class RelationOP:
                     if (await isGroupExist(cursor,group_id=group_id) is None):
                         raise GroupOPError("Group NOT FOUND",404)
                     # 再查询分组下是否有设备
-                    sqlTest = """SELECT device_id FROM relations WHERE group_id=%s LIMIT 1;"""
+                    sqlTest = """SELECT device_id FROM relations WHERE group_id=%s;"""
                     await cursor.execute(sqlTest,(group_id,))
-                    TestResult = await cursor.fetchone()
-                    if TestResult is None:
+                    TestResult = await cursor.fetchall()
+                    if len(TestResult) == 0:
                         raise RelationOPError("No Devices in this Group.",404)
                     # 先删每个设备的设备-分组关系
-                    sql = """DELETE FROM relations WHERE device_id IN (SELECT device_id FROM relations WHERE group_id=%s);"""
-                    await cursor.execute(sql,(group_id,))
+                    sql = """DELETE FROM relations WHERE device_id IN (""" + ("%s," * (len(TestResult)-1)) + "%s);"
+                    await cursor.execute(sql,TestResult)
                     # 再正式删除设备
-                    sql = """DELETE FROM devices WHERE device_id IN (SELECT device_id FROM relations WHERE group_id=%s);"""
-                    await cursor.execute(sql,(group_id,))
+                    sql = """DELETE FROM devices WHERE device_id IN (""" + ("%s," * (len(TestResult)-1)) + "%s);"
+                    await cursor.execute(sql,TestResult)
                     await conn.commit()
         except Exception as e:
             await conn.rollback()
