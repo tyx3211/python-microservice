@@ -105,15 +105,19 @@ async def public_recv(ws:WebSocketClientProtocol,Events):
             break
 
 # 3.定义心跳处理函数
-async def ping_pong(ws:WebSocketClientProtocol,event:asyncio.Event): # 注意心跳处理是宽容的，每一次收到云端回应都代表可以认为在线5s(延迟5s)，除非回应超时(此时立即执行)
-    global failureCount,Flag                          # 相较之下，上传边端基础信息不是宽容的，因为总希望云端获得尽可能新的状态信息
+async def ping_pong(ws:WebSocketClientProtocol,event:asyncio.Event):
+    global failureCount,Flag                          
     while True:
         try:
             while Flag == 1:
                 Flag = 0
                 await asyncio.sleep(wait_time_from(latestBussinessTimeStamp,5))
+            
+            # 因为网络波动客观存在，因此总是设置 “发起ping请求间隔” 为5s
             await ws.send(json.dumps({"type":"ping_pong","Headers":{},"data":"ping"}))
+            last_send_ping = time.time()
             myLogger.info(f"send ping")
+            
             await asyncio.wait_for(event["event"].wait(),timeout=3) # 发出ping到接收pong最多等3秒
             event["event"].clear()
 
@@ -121,7 +125,7 @@ async def ping_pong(ws:WebSocketClientProtocol,event:asyncio.Event): # 注意心
             Flag = 0 # 观察后5s内是否有别的业务报文上传
 
             myLogger.info(f"successfully receive pong")
-            await asyncio.sleep(5) # 等到了pong，就有5s的容许期
+            await asyncio.sleep(wait_time_from(last_send_ping,5)) # 等到了pong，就有5s的容许期
         except asyncio.TimeoutError:
             failureCount += 1 # 失败次数递增
             if failureCount >= 3: # 失败三次断开连接
@@ -138,7 +142,7 @@ async def ping_pong(ws:WebSocketClientProtocol,event:asyncio.Event): # 注意心
 # 4.定义状态上传函数
 
 async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
-    # 注意状态上传没有心跳那样的包容性，其15s间隔指的是发起请求的间隔固定15s
+    # 发起请求间隔为15s
     global failureCount,Flag,latestBussinessTimeStamp,Ws
     while True:
         try:
@@ -151,7 +155,7 @@ async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
             await asyncio.wait_for(event["event"].wait(),timeout=3) # 一样最多等3秒
             event["event"].clear()
             failureCount = 0 # 成功一次后失败次数就清零
-            myLogger.info(f"successfuly send StatusInfo")
+            myLogger.info(f"successfully receive response of statusSend")
 
             await asyncio.sleep(wait_time_from(last_send_status,15)) # 每隔15s发送状态报文
         except asyncio.TimeoutError:
@@ -183,7 +187,7 @@ async def execOrder(ws:WebSocketClientProtocol,order_request,restartConfirmEvent
 # 6.发起连接
 
 async def connect():
-    global failureCount,Ws
+    global failureCount,Ws,Flag
     retries = 0
     while retries < config.max_retries:
         try:
@@ -192,6 +196,7 @@ async def connect():
                 myLogger.info("successfully connect to Server.")
                 Ws = ws # 保存最新连接
                 failureCount = 0 # 重置失败次数
+                Flag = 0 # 重置Flag
                 
                 # 先鉴权
                 if await Login(ws) is False:
@@ -216,19 +221,4 @@ def startControllerBasicApp(host=None, port=None, sftp_host=None, sftp_port=None
     global config
     config.Set(host=host, port=port, sftp_host=sftp_host, sftp_port=sftp_port, sftp_username=sftp_username, sftp_password=sftp_password, device_id=device_id, device_password=device_password, device_hardware_sn=device_hardware_sn, device_hardware_model=device_hardware_model, device_log_dir=device_log_dir, device_log_name=device_log_name, max_retries=max_retries, outer_order_dict=outer_order_dict)
     SetLogMessage(myLogger,config.device_log_dir,config.device_log_local_path) # 配置完config后再配置日志
-    asyncio.run(connect())
-
-# if __name__ == "__main__":
-#     Host = "127.0.0.1"
-#     Port = 9090
-#     server_url = "ws://127.0.0.1:9090/ws"
-#     sftp_user = ""
-#     sftp_password = ""
-#     device = {
-#         "hardware":{
-#             "sn":"SN123456789",
-#             "model":"ModelA"
-#         }
-#     }
-#     password = "testpassword123"
-    # asyncio.run(connect())
+    asyncio.run(connect()) # 启动连接
