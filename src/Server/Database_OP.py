@@ -263,6 +263,24 @@ class DeviceOP:
                 raise
             else:
                 raise DataBaseError(f"A database error occurred: {e}")
+            
+    # 查询所有设备信息
+    async def query_all(self):
+        try:
+            async with pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    sql = """SELECT device_id,device_name,device_type,hardware_sn,hardware_model,software_version,software_last_update,nic1_type,nic1_mac,nic1_ipv4,nic2_type,nic2_mac,nic2_ipv4,dev_description,dev_state,password,created_time,updated_time FROM devices;"""
+                    await cursor.execute(sql)
+                    result = await cursor.fetchall()
+                    await conn.commit()
+                    result = [WrapperToJson(item,isDevice=True) for item in result]
+                    return result
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:            
+                raise DataBaseError(f"A database error occurred: {e}")
     
     #删除设备（设备分组关系也要一起删）
     async def delete(self,device_id):
@@ -371,6 +389,24 @@ class GroupOP:
                     else:
                         result = WrapperToJson(result,isGroup=True)
                         return result
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
+        
+        # 查询所有分组信息
+    async def query_all(self):
+        try:
+            async with pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    sql = """SELECT group_id,group_name,group_description,created_time,updated_time FROM group_info;"""
+                    await cursor.execute(sql)
+                    result = await cursor.fetchall()
+                    await conn.commit()
+                    result = [WrapperToJson(item,isGroup=True) for item in result]
+                    return result
         except Exception as e:
             await conn.rollback()
             if isOPError(e):
@@ -609,7 +645,31 @@ class RelationOP:
     
         # 删除某个分组下所属的所有设备
     async def deleteAllRelatedDeviceByGroup(self,group_id):
-        pass
+        try:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 先查询是否有该分组
+                    if (await isGroupExist(cursor,group_id=group_id) is None):
+                        raise GroupOPError("Group NOT FOUND",404)
+                    # 再查询分组下是否有设备
+                    sqlTest = """SELECT device_id FROM relations WHERE group_id=%s LIMIT 1;"""
+                    await cursor.execute(sqlTest,(group_id,))
+                    TestResult = await cursor.fetchone()
+                    if TestResult is None:
+                        raise RelationOPError("No Devices in this Group.",404)
+                    # 先删每个设备的设备-分组关系
+                    sql = """DELETE FROM relations WHERE device_id IN (SELECT device_id FROM relations WHERE group_id=%s);"""
+                    await cursor.execute(sql,(group_id,))
+                    # 再正式删除设备
+                    sql = """DELETE FROM devices WHERE device_id IN (SELECT device_id FROM relations WHERE group_id=%s);"""
+                    await cursor.execute(sql,(group_id,))
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
     
 # 构造暴露单例对象

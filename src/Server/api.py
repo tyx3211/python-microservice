@@ -216,6 +216,18 @@ async def device_SnModel_query(request:Request,device_sn,device_model):
     except Exception as e:
         return dealException(e)
     
+        # 查询所有设备
+@app.get('/service/devices_manage/device_basic_all_query')
+async def device_basic_all_query(request:Request):
+    if request.headers.get('Content-Type') != 'application/json':
+        return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
+    #正式处理部分
+    try:
+        result = await deviceOP.query_all()
+        return response.json({"status":"success","data":result},status=200)
+    except Exception as e:
+        return dealException(e)
+    
     # 删除设备(连带删除设备关联的所有设备分组关系)
 @app.delete('/service/devices_manage/device_delete',ignore_body=False)
 async def device_delete(request):
@@ -295,6 +307,18 @@ async def group_name_query(request,group_name):
     try:
         group_name = unquote(group_name) # 去除URL转义
         result = await groupOP.query(group_name=group_name)
+        return response.json({"status":"success","data":result},status=200)
+    except Exception as e:
+        return dealException(e)
+    
+        # 查询所有分组
+@app.get('/service/devices_manage/group_all_query')
+async def group_all_query(request):
+    if request.headers.get('Content-Type') != 'application/json':
+        return response.json({"status": "fail", "type":"GENERAL_ERROR" , "message": "Content-Type must be application/json"}, status=400)
+    #正式处理部分
+    try:
+        result = await groupOP.query_all()
         return response.json({"status":"success","data":result},status=200)
     except Exception as e:
         return dealException(e)
@@ -473,20 +497,21 @@ async def delete_group_all_relation(request):
     except Exception as e:
         return dealException(e)
     
-#     # 根据分组id删除某个分组下的所有设备
-# @app.delete('/service/devices_manage/delete_group_all_devices',ignore_body=False)
-# async def delete_group_all_relation(request):
-#     result={}
-#     if checkJsonParams(request,["group_id"],result) is False: # 至少需要提供group_id
-#         return result["result"]
+    # 根据分组id删除某个分组下的所有设备
+@app.delete('/service/devices_manage/delete_group_all_device',ignore_body=False)
+async def delete_group_all_device(request):
+    result={}
+    if checkJsonParams(request,["group_id"],result) is False: # 至少需要提供group_id
+        return result["result"]
     
-#     # 正式处理部分
-#     try:
-#         dic = flatten(request.json)
-#         await relationOP.deleteAllRelatedDeviceByGroup(dic["group_id"])
-#         return response.json({"status":"success","data":{}},status=200)
-#     except Exception as e:
-#         return dealException(e)
+    # 正式处理部分
+    try:
+        dic = flatten_json(request.json) 
+        await relationOP.deleteAllRelatedDeviceByGroup(dic["group_id"])
+        return response.json({"status":"success","data":{}},status=200)
+    except Exception as e:
+        return dealException(e)
+
 
 
 
