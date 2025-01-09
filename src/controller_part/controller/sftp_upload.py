@@ -1,7 +1,7 @@
 import asyncio
 import asyncssh
 import os
-from logger import myLogger
+from controller.logger import myLogger
 
 async def sftp_upload_log(device_id: str, log_file: str, remote_dir: str, sftp_host: str, sftp_port: int, sftp_username: str, sftp_password: str):
     """
@@ -26,10 +26,11 @@ async def sftp_upload_log(device_id: str, log_file: str, remote_dir: str, sftp_h
     try:
         myLogger.info("try to upload log.")
         async with asyncssh.connect(sftp_host, port=sftp_port, username=sftp_username, password=sftp_password,known_hosts=None) as conn:
+            # print("uchhhhhhhheueuuuuuuuu")
             sftp = await conn.start_sftp_client()
             # 上传文件
-            print(log_file)
-            print(remote_file)
+            # print(log_file)
+            # print(remote_file)
             await sftp.put(log_file, remote_file)
             myLogger.info(f"Successfully uploaded {log_file} to {remote_file}")
             return True

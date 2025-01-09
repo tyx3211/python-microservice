@@ -19,6 +19,12 @@ def safe_json_loads(json_string):
     except json.JSONDecodeError as e:
         return None
 
+def freeResource(device_id):
+    if device_id in device_websocket_map:
+        del device_websocket_map[device_id]
+        del DevicesStatusInfo[device_id]
+        del DeviceFailureCount[device_id]
+
 # 1.登录鉴权，可基于ID或SN_MODEL对或密码鉴权
 async def loginCheck(ws:WebSocketClientProtocol,result):
     try:
@@ -75,7 +81,7 @@ DevicesOnlineState = {} # 设备是否在线信息
 
 DevicesStatusInfo = {} # 全局在线设备的状态信息字典
 
-failureCount = 0 # 心跳失败计数，边端状态上传未接收到或者边端指令回应未接收到亦可贡献，至三可判断边端设备断线
+DeviceFailureCount = {} # 心跳失败计数统计字典，初值为0，边端状态上传未接收到或者边端指令回应未接收到亦可贡献，至三可判断边端设备断线
 # 注意，业务报文引起的替代心跳发送的操作是由边端完成的，由边端决定心跳报文的延迟量
 
 ###### 和北向接口相关：定义查询设备当前状态信息函数#######
@@ -112,10 +118,9 @@ async def TransDeviceState(device_id,ToState): # 由于在线状态其实是即�
 # 定义公共接收入口和分派函数，注意到，由于我们在边端经常使用一次业务报文发送替代一次心跳，来表明边端对云端有整体活跃请求（不管这个请求是心跳还是业务报文），因此对于failureCount的计算应该以来自边端的整体请求衡量，即在public_recv中计算failureCount即可
     # 注意到，由于延迟机制，心跳总是相比上一个请求最多延迟5s发送（除非这5s内又有新的请求，因此不妨将宽容度制定为7.5,5,5）
 async def public_recv(ws:WebSocketClientProtocol,Events,device_id):
-    global failureCount
     while True:
         try:
-            if failureCount == 0:
+            if DeviceFailureCount[device_id] == 0:
                 t = (5 + 2.5)
             else:
                 t = 5.5  
@@ -146,16 +151,20 @@ async def public_recv(ws:WebSocketClientProtocol,Events,device_id):
         except asyncio.TimeoutError:
             if DevicesOnlineState[device_id]!= "Unknown":
                 await TransDeviceState(device_id,"Unknown")
-            failureCount += 1 # 失败次数递增
-            if failureCount >= 3: # 失败三次断开连接，并等待边端重连
+            DeviceFailureCount[device_id] += 1 # 失败次数递增
+            if DeviceFailureCount[device_id] >= 3: # 失败三次断开连接，并等待边端重连
                 print(f"Timeout! No ping received within 5 seconds.")
-                failureCount = 0
+                freeResource(device_id)
                 await TransDeviceState(device_id,"offline")
                 break  # 退出业务发送，交给客户端重连
             continue #超时，开始下次等待
-        except websockets.exceptions.ConnectionClosed: # 处理连接关闭异常
+        except (websockets.exceptions.ConnectionClosed,asyncio.CancelledError): # 处理连接关闭异常
+            freeResource(device_id)
+            await TransDeviceState(device_id,"offline")
             break
         except Exception: #处理其它异常
+            freeResource(device_id)
+            await TransDeviceState(device_id,"offline")
             break
 
 ##############################################################################
@@ -210,6 +219,7 @@ async def Ws_Serve_Core(ws:WebSocketClientProtocol):
     device_id = result["device_id"]
     await TransDeviceState(device_id,"online")
     device_websocket_map[device_id] = {"ws":ws,"receiveOrderResultEvent":Events["receive_instruction_result"]}
+    DeviceFailureCount[device_id] = 0 # 初始化心跳失败计数
     
     # 再正式启动南向接口服务   
     await public_recv(ws,Events,device_id) # 启动心跳、状态报文、以及指令下达的公共处理模块

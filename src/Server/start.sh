@@ -1,1 +1,1 @@
-sudo .venv/bin/python3 src/Server/api
+sudo .venv/bin/python3 src/Server/api.py

@@ -129,7 +129,7 @@ async def setup_db(app,loop):
 @app.listener("after_server_stop")
 async def close_db(app,loop):
     # if len(DevicesOnlineState)!= 0:
-
+    await deviceOP.update_state_to_offline(device_ids=tuple(DevicesOnlineState.keys())) # 所有设备状态改为offline
     await close_database()
 
 #############################################################

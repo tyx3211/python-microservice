@@ -4,11 +4,13 @@ import json
 import time
 import websockets
 from websockets.legacy.client import WebSocketClientProtocol
-from logger import myLogger
-from execorder import order_exec
 
-import getStatusInfo
-from config import config,Config
+from controller.config import config,Config
+from controller.execorder import order_exec
+from controller.logger import myLogger,SetLogMessage
+from controller import getStatusInfo
+
+Ws = None # 用来检测当前连接是否最新（Ws保存最新连接）
 
 # 边端设备至少记录了SN_MODEL对和password，因此可以直接从config中获取
 
@@ -40,14 +42,14 @@ def wait_time_from(timestamp:float,delay:float)->int:
 async def Login(ws:WebSocketClientProtocol):
     try:
         myLogger.info("try to login.")
-        if config.device_id == "":
+        if config.device_id == None:
             await ws.send(json.dumps({"device_sn":config.device_hardware_sn,"device_model":config.device_hardware_model,"password":config.device_password}))
         else:
-            await ws.send(json.dumps({"device_id":config.device_id}))
+            await ws.send(json.dumps({"device_id":config.device_id,"password":config.device_password}))
         result = await asyncio.wait_for(ws.recv(),timeout=6)
         result = safe_json_loads(result)
         if result["status"] == "fail":
-            myLogger.info("failed to login,reason:" + result["Headers"]["message"])
+            myLogger.info("failed to login,reason:" + result["message"])
             return False
         else:
             myLogger.info("successfully login.")
@@ -100,7 +102,7 @@ async def public_recv(ws:WebSocketClientProtocol,Events):
                 Events["restart_confirm"]["event"].set()
             else:
                 pass
-        except websockets.exceptions.ConnectionClosed: # 处理连接关闭异常
+        except (websockets.exceptions.ConnectionClosed, asyncio.CancelledError): # 处理连接关闭异常
             break
         except Exception: #处理其它异常
             break
@@ -130,7 +132,7 @@ async def ping_pong(ws:WebSocketClientProtocol,event:asyncio.Event): # 注意心
                 failureCount = 0
                 break  # 退出业务发送，准备重连
             continue #超时，直接开始下次心跳发送
-        except websockets.exceptions.ConnectionClosed: # 处理连接关闭异常
+        except (websockets.exceptions.ConnectionClosed, asyncio.CancelledError): # 处理连接关闭异常
             break # 退出循环，停止业务
         except Exception as e:
             myLogger.error(f"Error during business: {e}")
@@ -140,7 +142,7 @@ async def ping_pong(ws:WebSocketClientProtocol,event:asyncio.Event): # 注意心
 
 async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
     # 注意状态上传没有心跳那样的包容性，其15s间隔指的是发起请求的间隔固定15s
-    global failureCount,Flag,latestBussinessTimeStamp
+    global failureCount,Flag,latestBussinessTimeStamp,Ws
     while True:
         try:
             StatusInfo = getStatusInfo.collect_status_info()
@@ -156,13 +158,15 @@ async def uploadStatusInfo(ws:WebSocketClientProtocol,event:asyncio.Event):
 
             await asyncio.sleep(wait_time_from(last_send_status,15)) # 每隔15s发送状态报文
         except asyncio.TimeoutError:
+            if ws != Ws: # 若连接断开，则不再发送状态报文(只需对非心跳活动检测，因为是由ping_pong决定断开的，这一步是为了在断开后正确析构未释放的资源)
+                break
             myLogger.info(f"Timeout! Failed to send StatusInfo.")
             failureCount += 1 # 失败次数递增
             if failureCount >= 3: # 失败三次断开连接
                 failureCount = 0
                 break  # 退出业务发送，准备重连
             continue #超时，直接开始下次状态报文发送
-        except websockets.exceptions.ConnectionClosed: # 处理连接关闭异常
+        except (websockets.exceptions.ConnectionClosed, asyncio.CancelledError): # 处理连接关闭异常
             break # 退出循环，停止业务
         except Exception as e:
             myLogger.error(f"Error during business: {e}")
@@ -181,11 +185,16 @@ async def execOrder(ws:WebSocketClientProtocol,order_request,restartConfirmEvent
 # 6.发起连接
 
 async def connect():
-    while True:
+    global failureCount,Ws
+    retries = 0
+    while retries < config.max_retries:
         try:
             myLogger.info("Ready to connect to Server.")
             async with websockets.connect(config.server_url) as ws: # 发起webSocket连接，连接成功后webSocket对象引用给到ws
                 myLogger.info("successfully connect to Server.")
+                Ws = ws # 保存最新连接
+                failureCount = 0 # 重置失败次数
+                
                 # 先鉴权
                 if await Login(ws) is False:
                     continue
@@ -196,15 +205,19 @@ async def connect():
                 await ping_pong(ws,events["ping_pong"]) # 开始ping-pong 心跳，心跳结束即进入重连
         except Exception as e:
             myLogger.error(f"Error: {e},disconnect to Server.")
-        myLogger.info("Server Offline. try-reconnect")
+        myLogger.info("Server Offline. try-reconnect 10s later.")
+        retries += 1
+        await asyncio.sleep(10) # 重连间隔10s
 
 
 # 7. 暴露给外界自定义功能
 
 # startControllerBasicApp要有和Config类一样的参数，以便于外部调用时传入配置信息
 
-def startControllerBasicApp(host=None, port=None, sftp_host=None, sftp_port=None, sftp_username=None, sftp_password=None, device_id=None, device_password=None, device_hardware_sn=None, device_hardware_model=None, outer_order_dict=[]):
-    config = Config(host=host, port=port, sftp_host=sftp_host, sftp_port=sftp_port, sftp_username=sftp_username, sftp_password=sftp_password, device_id=device_id, device_password=device_password, device_hardware_sn=device_hardware_sn, device_hardware_model=device_hardware_model, outer_order_dict=outer_order_dict)
+def startControllerBasicApp(host=None, port=None, sftp_host=None, sftp_port=None, sftp_username=None, sftp_password=None, device_id=None, device_password=None, device_hardware_sn=None, device_hardware_model=None, device_log_dir=None, device_log_name=None, max_retries=None, outer_order_dict={}):
+    global config
+    config.Set(host=host, port=port, sftp_host=sftp_host, sftp_port=sftp_port, sftp_username=sftp_username, sftp_password=sftp_password, device_id=device_id, device_password=device_password, device_hardware_sn=device_hardware_sn, device_hardware_model=device_hardware_model, device_log_dir=device_log_dir, device_log_name=device_log_name, max_retries=max_retries, outer_order_dict=outer_order_dict)
+    SetLogMessage(myLogger,config.device_log_dir,config.device_log_local_path) # 配置完config后再配置日志
     asyncio.run(connect())
 
 # if __name__ == "__main__":

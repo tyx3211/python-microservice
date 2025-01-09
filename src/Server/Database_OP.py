@@ -286,6 +286,23 @@ class DeviceOP:
                 raise
             else:
                 raise DataBaseError(f"A database error occurred: {e}")
+            
+    # 修改多个设备状态为离线
+    async def update_state_to_offline(self,device_ids:tuple):
+        try:
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # 修改设备状态
+                    timestamp = math.floor(time.time()*1000)
+                    sql = f"UPDATE devices SET dev_state='offline',updated_time={timestamp} WHERE device_id IN " + "(" + ("%s," * (len(device_ids)-1)) + "%s);"
+                    await cursor.execute(sql,device_ids)
+                    await conn.commit()
+        except Exception as e:
+            await conn.rollback()
+            if isOPError(e):
+                raise
+            else:
+                raise DataBaseError(f"A database error occurred: {e}")
     
 #分组相关操作
 class GroupOP:
