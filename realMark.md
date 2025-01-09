@@ -1,7 +1,0 @@
-**仍需要修正的点：**
-
-1. 微服务的failureCount应该是针对各个设备的，需要鉴权成功后传入device_id时修改各个device_id对应的failureCount才对
-2. 设备端需要在asyncio.TimeOutError:后先检查在本地是不是都能查到Ws连接断开了，(可能还需要捕获CancelledError异常，详见消息透传一节，建议使用元组捕获异常)这样就直接退出协程（保证ping_pong重连后各协程的合理析构）
-3. 需要加入MAX_RETRIES机制，防止边端连接不上云端后的无意义重连,边端当前retries累积在鉴权成功后清零。
-4. 需要在边端设备下线（断开）的时候析构掉对应状态字典的键值对，避免内存无意义消耗
-5. 需要在after-server-stop中加入批量修改所有当前在线设备的online状态为offline，避免云端掉线导致的SQL存储中state不正常
