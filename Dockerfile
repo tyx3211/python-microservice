@@ -19,6 +19,6 @@ COPY . .
 # 指示该服务使用的端口为 8000
 EXPOSE 9090
 RUN ["python","-m","pip","install","--upgrade","pip","-i","https://pypi.doubanio.com/simple"]
-RUN ["pip3","install","-r","requirement.txt","-i","https://pypi.doubanio.com/simple"]
+RUN ["pip3","install","-r","requirements.txt","-i","https://pypi.doubanio.com/simple"]
 
 CMD ["python3","/app/src/Server/api.py"] 
