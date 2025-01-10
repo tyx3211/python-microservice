@@ -217,6 +217,23 @@ async def connect():
 # startControllerBasicApp要有和Config类一样的参数，以便于外部调用时传入配置信息
 
 def startControllerBasicApp(host=None, port=None, sftp_host=None, sftp_port=None, sftp_username=None, sftp_password=None, device_id=None, device_password=None, device_hardware_sn=None, device_hardware_model=None, device_log_dir=None, device_log_name=None, max_retries=None, outer_order_dict={}):
+    """
+    边端基础应用启动函数，可配置以下属性：
+    - host: 服务器地址(默认None)
+    - port: 服务器端口(默认None)
+    - sftp_host: sftp服务器地址(默认None)
+    - sftp_port: sftp服务器端口(默认None)
+    - sftp_username: sftp用户名(默认None)
+    - sftp_password: sftp密码(默认None)
+    - device_id: 设备ID(默认None)
+    - device_password: 设备密码(默认None)
+    - device_hardware_sn: 设备硬件序列号(默认None)
+    - device_hardware_model: 设备硬件型号(默认None)
+    - device_log_dir: 设备日志目录(默认当前所在目录下的log文件夹)
+    - device_log_name: 设备日志名称(默认device.log)
+    - max_retries: 最大重连次数(默认5)
+    - outer_order_dict : 外部指令字典(默认{})
+    """
     global config
     config.Set(host=host, port=port, sftp_host=sftp_host, sftp_port=sftp_port, sftp_username=sftp_username, sftp_password=sftp_password, device_id=device_id, device_password=device_password, device_hardware_sn=device_hardware_sn, device_hardware_model=device_hardware_model, device_log_dir=device_log_dir, device_log_name=device_log_name, max_retries=max_retries, outer_order_dict=outer_order_dict)
     SetLogMessage(myLogger,config.device_log_dir,config.device_log_local_path) # 配置完config后再配置日志
