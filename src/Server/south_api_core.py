@@ -189,7 +189,7 @@ async def giveOrder(device_id,order):
     # 下达指令
     try:
         await Ws.send(json.dumps(order))
-        await asyncio.wait_for(ReceiveResultEvent["event"].wait(),timeout=3) # 当边端回应时可继续，但不能超过10s，否则认为这次指令下达失败
+        await asyncio.wait_for(ReceiveResultEvent["event"].wait(),timeout=10) # 当边端回应时可继续，但不能超过10s，否则认为这次指令下达失败
         ReceiveResultEvent["event"].clear()
 
         if order["Headers"]["order_type"] == "restart": # 对于重启，额外确认
