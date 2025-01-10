@@ -12,9 +12,9 @@ src/                    # 项目主代码目录
       getStatusInfo.py              # 获取状态信息模块
       logger.py                     # 日志记录模块
       sftp_upload.py                # SFTP文件上传模块
-      test_start_1.py               # 测试脚本1
-      test_start_2.py               # 测试脚本2
-      User.py                       # 用户配置
+    test_start_1.py               # 测试脚本1
+    test_start_2.py               # 测试脚本2
+    User.py                       # 用户配置
   Server/               # 服务端相关部分
     api.py                  # API 接口逻辑
     database_ini.json       # 数据库初始化配置文件
