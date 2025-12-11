@@ -3,7 +3,16 @@ import asyncssh
 import os
 from controller.logger import myLogger
 
-async def sftp_upload_log(device_id: str, log_file: str, remote_dir: str, sftp_host: str, sftp_port: int, sftp_username: str, sftp_password: str):
+
+async def sftp_upload_log(
+    device_id: str,
+    log_file: str,
+    remote_dir: str,
+    sftp_host: str,
+    sftp_port: int,
+    sftp_username: str,
+    sftp_password: str,
+):
     """
     上传日志到远程 SFTP 服务器。
 
@@ -17,15 +26,21 @@ async def sftp_upload_log(device_id: str, log_file: str, remote_dir: str, sftp_h
     """
     # 确保日志目录和文件存在，不存在就创建
     if not os.path.exists(log_file):
-        with open(log_file, 'w') as file:
+        with open(log_file, "w") as file:
             pass
 
     remote_file = os.path.join(remote_dir, f"{device_id}.log")
-    
+
     # 使用 asyncssh 执行 SFTP 上传操作
     try:
         myLogger.info("try to upload log.")
-        async with asyncssh.connect(sftp_host, port=sftp_port, username=sftp_username, password=sftp_password,known_hosts=None) as conn:
+        async with asyncssh.connect(
+            sftp_host,
+            port=sftp_port,
+            username=sftp_username,
+            password=sftp_password,
+            known_hosts=None,
+        ) as conn:
             # print("uchhhhhhhheueuuuuuuuu")
             sftp = await conn.start_sftp_client()
             # 上传文件

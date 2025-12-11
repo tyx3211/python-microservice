@@ -4,6 +4,7 @@ import asyncio
 import websockets
 import random
 
+
 def get_cpu_info():
     """
     获取CPU信息
@@ -18,8 +19,9 @@ def get_cpu_info():
         "user_cpu_time": cpu_times.user,
         "system_cpu_time": cpu_times.system,
         "idle_cpu_time": cpu_times.idle,
-        "io_wait_cpu_time": getattr(cpu_times, "iowait", 0)  # 部分平台可能没有 iowait
+        "io_wait_cpu_time": getattr(cpu_times, "iowait", 0),  # 部分平台可能没有 iowait
     }
+
 
 def get_memory_info():
     """
@@ -33,8 +35,11 @@ def get_memory_info():
     return {
         "total_memory_mb": memory_info.total // 1024 // 1024,  # 转换为 MB
         "free_memory_mb": memory_info.free // 1024 // 1024,  # 转换为 MB
-        "buff_cache_mb": (memory_info.buffers + memory_info.cached) // 1024 // 1024  # 转换为 MB
+        "buff_cache_mb": (memory_info.buffers + memory_info.cached)
+        // 1024
+        // 1024,  # 转换为 MB
     }
+
 
 def get_disk_info():
     """
@@ -44,12 +49,13 @@ def get_disk_info():
     - root_used_size_mb: 根目录已使用大小（单位：MB）
     - root_used_percent: 根目录使用百分比
     """
-    root_disk = psutil.disk_usage('/')
+    root_disk = psutil.disk_usage("/")
     return {
         "root_total_size_mb": root_disk.total // 1024 // 1024,  # 转换为 MB
         "root_used_size_mb": root_disk.used // 1024 // 1024,  # 转换为 MB
-        "root_used_percent": root_disk.percent  # 使用百分比
+        "root_used_percent": root_disk.percent,  # 使用百分比
     }
+
 
 def collect_status_info():
     """
@@ -62,12 +68,9 @@ def collect_status_info():
     return {
         "CPU_info": get_cpu_info(),
         "Memory_info": get_memory_info(),
-        "Disk_info": get_disk_info()
+        "Disk_info": get_disk_info(),
     }
+
 
 def easyTest():
-    return {
-        "position":random.randint(1,100)
-    }
-
-
+    return {"position": random.randint(1, 100)}

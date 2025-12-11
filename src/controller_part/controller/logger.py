@@ -1,10 +1,12 @@
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import os
+
 # from controller.config import config
 
 # 暴露日志单例对象
 myLogger = logging.getLogger("ThreeDayRotatingLogger")
+
 
 def SetLogMessage(logger_object, log_dir, log_path):
     if not os.path.exists(log_dir):
@@ -26,6 +28,7 @@ def SetLogMessage(logger_object, log_dir, log_path):
     # 配置日志对象
     logger_object.setLevel(logging.DEBUG)  # 日志级别
     logger_object.addHandler(handler)
+
 
 # 测试日志
 if __name__ == "__main__":
